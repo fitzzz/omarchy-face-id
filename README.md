@@ -13,9 +13,9 @@ The current build includes:
 
 ## Current safety boundary
 
-The app does **not** edit `/etc/pam.d`, alter Omarchy's lock screen, or enable face unlocking by itself. Gaze's Arch package normally changes sudo and polkit authentication automatically. This project installs the verified package with pacman's `--noscriptlet` protection, then checks that the password, sudo, and polkit PAM files did not change.
+The AppImage handles setup and enrollment. The optional lock integration adds a dedicated face-only PAM service and a small Omarchy service plugin. It does not replace the lock screen, edit Omarchy's password service, or alter the shared system authentication stack.
 
-The AppImage is the setup and enrollment interface. Actual lock-screen authentication will still require a separately reviewed Gaze daemon/PAM installation and a safe Omarchy integration point. Until those pieces exist, finishing the walkthrough does not change how the computer unlocks.
+If a later Omarchy update changes the internal lock-service interface, face unlock fails closed: the face attempt stops and the existing password screen continues to work.
 
 ## Install Gaze safely on Omarchy
 
@@ -33,6 +33,14 @@ The script downloads Gaze 0.2.12 from its official GitHub release, verifies the 
 chmod +x dist/Omarchy_Face_Unlock-x86_64.AppImage
 APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_Unlock-x86_64.AppImage
 ```
+
+After saving a face scan, enable it on Omarchy's lock screen:
+
+```bash
+./scripts/install-lock-integration.sh
+```
+
+Then lock the computer and look directly at the camera. Password entry remains available while Gaze checks your face.
 
 `APPIMAGE_EXTRACT_AND_RUN=1` avoids relying on FUSE. The package intentionally uses the Qt 6 libraries already supplied by Omarchy; bundling a second Linux multimedia stack caused loader conflicts during testing.
 
@@ -63,6 +71,6 @@ Gaze is the sole camera owner. The Qt app receives Gaze's preview frames and nev
 
 ## Project status
 
-This is an early development build, not a complete lock-screen authentication product. The Gaze runtime now has a narrow installation method that leaves unrelated PAM services alone. The remaining blocker is a recovery-tested extension point in Omarchy's first-party lock service. See [the initial build plan](docs/2026-08-28-initial-build.md).
+This is an early development build. The current compatibility integration uses the first-party lock service's existing `finishUnlock()` method and checks for it at runtime. A future, supported Omarchy biometric-provider API is still preferred because it can also provide a proper face-status slot inside the lock screen. See [the initial build plan](docs/2026-08-28-initial-build.md).
 
 Project code is GPL-3.0-or-later. The Lucide-derived eye geometry is covered by the notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

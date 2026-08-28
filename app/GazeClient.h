@@ -7,6 +7,9 @@
 #include <QObject>
 #include <QTimer>
 
+class QProcess;
+class QTemporaryFile;
+
 class GazeClient final : public QObject
 {
     Q_OBJECT
@@ -21,6 +24,9 @@ class GazeClient final : public QObject
     Q_PROPERTY(QString faceStatus READ faceStatus NOTIFY enrollmentChanged)
     Q_PROPERTY(QString previewDataUrl READ previewDataUrl NOTIFY previewChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorChanged)
+    Q_PROPERTY(bool lockIntegrationInstalled READ lockIntegrationInstalled NOTIFY lockIntegrationChanged)
+    Q_PROPERTY(bool lockIntegrationInstalling READ lockIntegrationInstalling NOTIFY lockIntegrationChanged)
+    Q_PROPERTY(QString lockIntegrationError READ lockIntegrationError NOTIFY lockIntegrationChanged)
     Q_PROPERTY(QColor themeBackground READ themeBackground NOTIFY themeChanged)
     Q_PROPERTY(QColor themeDarkBackground READ themeDarkBackground NOTIFY themeChanged)
     Q_PROPERTY(QColor themeDarkerBackground READ themeDarkerBackground NOTIFY themeChanged)
@@ -47,6 +53,9 @@ public:
     QString faceStatus() const;
     QString previewDataUrl() const;
     QString errorMessage() const;
+    bool lockIntegrationInstalled() const;
+    bool lockIntegrationInstalling() const;
+    QString lockIntegrationError() const;
     QColor themeBackground() const;
     QColor themeDarkBackground() const;
     QColor themeDarkerBackground() const;
@@ -61,6 +70,7 @@ public:
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void beginEnrollment(const QString &faceName);
     Q_INVOKABLE void cancelEnrollment();
+    Q_INVOKABLE void enableLockIntegration();
 
 signals:
     void availabilityChanged();
@@ -68,6 +78,7 @@ signals:
     void enrollmentChanged();
     void previewChanged();
     void errorChanged();
+    void lockIntegrationChanged();
     void themeChanged();
 
 private slots:
@@ -85,6 +96,9 @@ private:
     void setError(const QString &message);
     void scheduleThemeReload();
     void reloadTheme();
+    void refreshLockIntegrationStatus();
+    bool installUserPlugin(QString *error);
+    void finishLockIntegrationInstall(bool authorized);
 
     bool m_installed = false;
     bool m_serviceAvailable = false;
@@ -98,6 +112,11 @@ private:
     QString m_faceStatus;
     QString m_previewDataUrl;
     QString m_errorMessage;
+    bool m_lockIntegrationInstalled = false;
+    bool m_lockIntegrationInstalling = false;
+    QString m_lockIntegrationError;
+    QProcess *m_lockIntegrationProcess = nullptr;
+    QTemporaryFile *m_lockIntegrationPamFile = nullptr;
     QFileSystemWatcher m_themeWatcher;
     QTimer m_themeReloadTimer;
     QString m_themeRoot;

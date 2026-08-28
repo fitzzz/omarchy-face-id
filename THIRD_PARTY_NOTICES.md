@@ -1,5 +1,11 @@
 # Third-party notices
 
+## Omarchy wordmark
+
+The setup interface includes the official Omarchy wordmark geometry from the
+locally installed Omarchy distribution. It is used only to identify Omarchy
+compatibility and is recolored to follow the active theme.
+
 ## Lucide icons
 
 The animated eye component derives its eye outline and closed-eye geometry from Lucide's `eye` and `eye-closed` icons.

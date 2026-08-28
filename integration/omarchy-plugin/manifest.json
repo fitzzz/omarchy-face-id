@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "fitzzz.face-unlock",
+  "name": "Face Unlock",
+  "version": "0.2.0",
+  "author": "fitzzz",
+  "description": "Face authentication for Omarchy's existing lock screen with password fallback.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

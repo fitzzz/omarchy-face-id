@@ -29,7 +29,8 @@ ApplicationWindow {
     readonly property color errorColor: gazeClient.themeRed
     readonly property var stepNames: ["Welcome", "Ready", "Scan", "Done"]
 
-    property int currentStep: Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
+    property int currentStep: Qt.application.arguments.indexOf("--done-page-test") >= 0 ? 3
+        : Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
     property bool enrollmentStarted: false
     readonly property string activePrompt: friendlyPrompt(gazeClient.enrollmentPrompt)
     readonly property int activeProgress: gazeClient.enrollmentProgress
@@ -81,7 +82,7 @@ ApplicationWindow {
 
     function readinessDetail() {
         if (gazeReady)
-            return "Your face scan stays on this computer."
+            return "Video is processed locally and is never saved."
         if (!gazeClient.installed)
             return "Install the face-scanning service, then check again."
         if (!gazeClient.serviceAvailable)
@@ -123,8 +124,15 @@ ApplicationWindow {
         target: gazeClient
         function onEnrollmentChanged() {
             if (gazeClient.enrollmentComplete)
-                root.currentStep = 3
+                scanCompleteTimer.restart()
         }
+    }
+
+    Timer {
+        id: scanCompleteTimer
+        interval: 900
+        repeat: false
+        onTriggered: root.currentStep = 3
     }
 
     component PageTitle: ColumnLayout {
@@ -201,12 +209,10 @@ ApplicationWindow {
                             font.pixelSize: 16
                             font.weight: Font.Bold
                         }
-                        Text {
-                            text: "FOR OMARCHY"
-                            color: root.mutedColor
-                            font.family: "monospace"
-                            font.pixelSize: 10
-                            font.letterSpacing: 1.1
+                        OmarchyWordmark {
+                            Layout.preferredWidth: 76
+                            Layout.preferredHeight: 18
+                            markColor: root.mutedColor
                         }
                     }
                 }
@@ -221,33 +227,19 @@ ApplicationWindow {
                     mutedColor: root.mutedColor
                 }
 
-                Rectangle {
+                Item {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 82
-                    radius: 8
-                    color: "transparent"
-                    border.width: 1
-                    border.color: root.borderColor
+                    Layout.preferredHeight: 48
 
-                    ColumnLayout {
+                    Text {
                         anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 5
-                        Text {
-                            text: "PASSWORD BACKUP"
-                            color: root.accentColor
-                            font.family: "monospace"
-                            font.pixelSize: 10
-                            font.weight: Font.Bold
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "You can always unlock with your password."
-                            color: root.mutedColor
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
-                        }
+                        text: "Your password always works."
+                        color: root.textColor
+                        opacity: 0.82
+                        font.family: "monospace"
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
             }
@@ -272,11 +264,14 @@ ApplicationWindow {
                         spacing: 22
 
                         Item { Layout.fillHeight: true }
-                        EyeIndicator {
+                        FaceScanIndicator {
                             Layout.alignment: Qt.AlignHCenter
-                            iconSize: 122
-                            state: "searching"
-                            neutralColor: root.accentColor
+                            Layout.preferredWidth: 172
+                            Layout.preferredHeight: 172
+                            state: "idle"
+                            primaryColor: root.accentColor
+                            checkingColor: root.amberColor
+                            mutedColor: root.mutedColor
                             backgroundColor: root.backgroundColor
                         }
                         Text {
@@ -291,7 +286,7 @@ ApplicationWindow {
                         Text {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Unlock your computer with a glance. Your face stays on this computer."
+                            text: "Unlock your computer with a glance. Face matching and liveness checks happen locally; your biometric data never leaves this computer."
                             color: root.mutedColor
                             font.family: "monospace"
                             font.pixelSize: 15
@@ -333,39 +328,18 @@ ApplicationWindow {
                             border.width: 1
                             border.color: root.gazeReady ? root.accentColor : root.errorColor
 
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: 238
-                                height: 238
-                                radius: 119
-                                color: "transparent"
-                                border.width: 1
-                                border.color: root.gazeReady ? root.accentColor : root.mutedColor
-                                opacity: 0.6
-
-                                Rectangle {
-                                    anchors.centerIn: parent
-                                    width: 188
-                                    height: 188
-                                    radius: 94
-                                    color: Qt.rgba(root.accentColor.r, root.accentColor.g,
-                                                   root.accentColor.b, 0.05)
-                                    border.width: 1
-                                    border.color: root.borderColor
-                                }
-                            }
-
                             ColumnLayout {
                                 anchors.centerIn: parent
-                                spacing: 12
-                                EyeIndicator {
+                                spacing: 8
+                                FaceScanIndicator {
                                     Layout.alignment: Qt.AlignHCenter
-                                    iconSize: 82
-                                    state: root.gazeReady ? "success" : "unavailable"
+                                    Layout.preferredWidth: 196
+                                    Layout.preferredHeight: 196
+                                    state: root.gazeReady ? "idle" : "unavailable"
                                     backgroundColor: root.surfaceColor
-                                    neutralColor: root.accentColor
-                                    successColor: root.successColor
-                                    unavailableColor: root.mutedColor
+                                    primaryColor: root.accentColor
+                                    checkingColor: root.amberColor
+                                    mutedColor: root.mutedColor
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
@@ -450,103 +424,21 @@ ApplicationWindow {
                                                gazeClient.previewDataUrl.length > 0 ? 0.16 : 0)
                             }
 
-                            Item {
-                                id: scanRing
+                            FaceScanIndicator {
                                 anchors.centerIn: parent
                                 width: Math.min(parent.width * 0.58, 350)
                                 height: width
-                                readonly property int segmentCount: 48
-                                readonly property int filledSegments: gazeClient.enrollmentComplete
-                                    ? segmentCount
-                                    : Math.round((root.activeProgress / root.activeMaximum) * segmentCount)
-
-                                Repeater {
-                                    model: scanRing.segmentCount
-                                    delegate: Item {
-                                        required property int index
-                                        anchors.centerIn: parent
-                                        width: scanRing.width
-                                        height: scanRing.height
-                                        rotation: index * (360 / scanRing.segmentCount)
-
-                                        Rectangle {
-                                            anchors.top: parent.top
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            width: 3
-                                            height: 13
-                                            radius: 2
-                                            color: index < scanRing.filledSegments
-                                                ? root.accentColor : root.mutedColor
-                                            opacity: index < scanRing.filledSegments ? 1 : 0.24
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    anchors.centerIn: parent
-                                    width: parent.width - 42
-                                    height: width
-                                    radius: width / 2
-                                    color: "transparent"
-                                    border.width: 1
-                                    border.color: root.accentColor
-                                    opacity: 0.72
-                                }
-
-                                EyeIndicator {
-                                    anchors.centerIn: parent
-                                    visible: gazeClient.previewDataUrl.length === 0
-                                    iconSize: 96
-                                    state: root.scanFailed ? "unavailable" : "checking"
-                                    gazeDirection: root.activePose
-                                    backgroundColor: root.surfaceColor
-                                    checkingColor: root.amberColor
-                                    unavailableColor: root.errorColor
-                                }
+                                state: gazeClient.enrollmentComplete ? "success"
+                                    : root.scanFailed ? "unavailable" : "checking"
+                                direction: root.activePose
+                                progress: root.activeProgress / root.activeMaximum
+                                showAvatar: gazeClient.previewDataUrl.length === 0
+                                backgroundColor: root.surfaceColor
+                                primaryColor: root.successColor
+                                checkingColor: root.amberColor
+                                mutedColor: root.scanFailed ? root.errorColor : root.mutedColor
                             }
 
-                            Rectangle {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.bottom: parent.bottom
-                                anchors.bottomMargin: 20
-                                width: Math.min(parent.width - 48, 440)
-                                height: 64
-                                radius: 10
-                                color: Qt.rgba(root.sidebarColor.r, root.sidebarColor.g,
-                                               root.sidebarColor.b, 0.92)
-                                border.width: 1
-                                border.color: root.borderColor
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 12
-                                    spacing: 7
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: root.scanFailed ? root.activePrompt : "SCANNING"
-                                        color: root.scanFailed ? root.errorColor : root.textColor
-                                        font.family: "monospace"
-                                        font.pixelSize: 11
-                                        font.weight: Font.Bold
-                                        font.letterSpacing: 1.1
-                                        horizontalAlignment: Text.AlignHCenter
-                                    }
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 4
-                                        radius: 2
-                                        color: Qt.rgba(root.mutedColor.r, root.mutedColor.g,
-                                                       root.mutedColor.b, 0.3)
-                                        Rectangle {
-                                            width: parent.width * Math.min(1, root.activeProgress / root.activeMaximum)
-                                            height: parent.height
-                                            radius: parent.radius
-                                            color: root.accentColor
-                                            Behavior on width { NumberAnimation { duration: 260 } }
-                                        }
-                                    }
-                                }
-                            }
                         }
 
                         RowLayout {
@@ -572,16 +464,20 @@ ApplicationWindow {
                         spacing: 22
 
                         Item { Layout.fillHeight: true }
-                        EyeIndicator {
+                        FaceScanIndicator {
                             Layout.alignment: Qt.AlignHCenter
-                            iconSize: 128
+                            Layout.preferredWidth: 164
+                            Layout.preferredHeight: 164
                             state: "success"
                             backgroundColor: root.backgroundColor
-                            successColor: root.successColor
+                            primaryColor: root.successColor
+                            checkingColor: root.amberColor
+                            mutedColor: root.mutedColor
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Face Scan Complete"
+                            text: gazeClient.lockIntegrationInstalled
+                                ? "Face Unlock Is Ready" : "Face Scan Complete"
                             color: root.textColor
                             font.family: "monospace"
                             font.pixelSize: 34
@@ -591,8 +487,11 @@ ApplicationWindow {
                         Text {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Your face profile is saved locally on this computer."
-                            color: root.mutedColor
+                            text: gazeClient.lockIntegrationInstalled
+                                ? "Lock your computer and look directly at the camera."
+                                : "Authorize one final system change to enable Face Unlock on the lock screen."
+                            color: root.textColor
+                            opacity: 0.78
                             font.family: "monospace"
                             font.pixelSize: 15
                             lineHeight: 1.45
@@ -610,10 +509,30 @@ ApplicationWindow {
                                 }
                             }
                             ThemedActionButton {
-                                text: "Done"
+                                text: gazeClient.lockIntegrationInstalling
+                                    ? "Authorizing…"
+                                    : gazeClient.lockIntegrationInstalled
+                                        ? "Done" : "Enable Face Unlock"
                                 primary: true
-                                onClicked: root.close()
+                                enabled: !gazeClient.lockIntegrationInstalling
+                                onClicked: {
+                                    if (gazeClient.lockIntegrationInstalled)
+                                        root.close()
+                                    else
+                                        gazeClient.enableLockIntegration()
+                                }
                             }
+                        }
+                        Text {
+                            Layout.maximumWidth: 520
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: gazeClient.lockIntegrationError.length > 0
+                            text: gazeClient.lockIntegrationError
+                            color: root.errorColor
+                            font.family: "monospace"
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
                         }
                         Item { Layout.fillHeight: true }
                     }

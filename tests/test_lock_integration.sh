@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+project_root=$(cd "$(dirname "$0")/.." && pwd)
+service="$project_root/integration/omarchy-plugin/Service.qml"
+pam="$project_root/packaging/pam/omarchy-lock-face"
+installer="$project_root/scripts/install-lock-integration.sh"
+
+grep -Fq 'config: "omarchy-lock-face"' "$service"
+grep -Fq 'result === PamResult.Success' "$service"
+grep -Fq 'lockService.finishUnlock()' "$service"
+grep -Fq 'onAuthenticatingPasswordChanged' "$service"
+grep -Fq 'facePam.abort()' "$service"
+
+if rg -n 'omarchy-lock-password|system-auth|pam_unix|pam_faillock' "$pam"; then
+    echo "face-only PAM service must not reference a password stack" >&2
+    exit 1
+fi
+
+non_comment_rules=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$pam")
+[[ $(wc -l <<<"$non_comment_rules") -eq 3 ]]
+grep -Eq '^auth[[:space:]]+\[success=done default=ignore\][[:space:]]+pam_gaze\.so$' <<<"$non_comment_rules"
+grep -Eq '^auth[[:space:]]+required[[:space:]]+pam_deny\.so$' <<<"$non_comment_rules"
+grep -Eq '^account[[:space:]]+required[[:space:]]+pam_permit\.so$' <<<"$non_comment_rules"
+
+if rg -n '/usr/share/omarchy|omarchy-lock-password|system-auth' "$installer"; then
+    echo "installer must not edit first-party Omarchy or password PAM files" >&2
+    exit 1
+fi

@@ -10,7 +10,10 @@
 - Add a checksum-pinned Arch installer that suppresses Gaze's PAM-changing package scriptlet and verifies protected PAM files remain unchanged.
 - Redesign setup as a four-screen Welcome, Ready, Scan, and Done journey with plain language and a segmented orbital scan indicator.
 - Remove Qt Multimedia from the app so Gaze is always the sole camera owner.
-- Keep PAM and the Omarchy lock screen unchanged.
+- Add a final **Enable Face Unlock** step so system authorization happens only after enrollment.
+- Add a dedicated face-only PAM service and an update-soft Omarchy lock compatibility plugin while leaving password PAM and first-party lock files unchanged.
+- Replace the orbital eye with an animated face, 72-mark radial scan, and face-to-checkmark completion transition.
+- Use the official Omarchy wordmark geometry in the themed sidebar.
 
 ## 0.1.0 - 2026-08-28
 

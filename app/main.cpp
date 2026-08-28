@@ -17,6 +17,8 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
     const bool smokeTest = app.arguments().contains(QStringLiteral("--smoke-test"));
+    const bool integrationInstallTest = app.arguments().contains(
+        QStringLiteral("--integration-install-test"));
     GazeClient gazeClient;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("gazeClient"), &gazeClient);
@@ -30,6 +32,20 @@ int main(int argc, char *argv[])
 
     if (smokeTest)
         QTimer::singleShot(250, &app, [&app, &loaded]() { app.exit(loaded ? 0 : 1); });
+
+    if (integrationInstallTest) {
+        QObject::connect(&gazeClient, &GazeClient::lockIntegrationChanged, &app,
+                         [&app, &gazeClient]() {
+            if (gazeClient.lockIntegrationInstalling())
+                return;
+            if (gazeClient.lockIntegrationInstalled())
+                app.exit(0);
+            else if (!gazeClient.lockIntegrationError().isEmpty())
+                app.exit(1);
+        });
+        QTimer::singleShot(0, &gazeClient, &GazeClient::enableLockIntegration);
+        QTimer::singleShot(5000, &app, [&app]() { app.exit(2); });
+    }
 
     return app.exec();
 }

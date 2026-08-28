@@ -34,7 +34,18 @@ qt_add_qml_module(omarchy-face-unlock
         qml/Main.qml
         qml/components/ActionButton.qml
         qml/components/EyeIndicator.qml
+        qml/components/FaceScanIndicator.qml
+        qml/components/OmarchyWordmark.qml
         qml/components/StepRail.qml
+)
+
+qt_add_resources(omarchy-face-unlock "face_unlock_integration"
+    PREFIX "/"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}"
+    FILES
+        integration/omarchy-plugin/Service.qml
+        integration/omarchy-plugin/manifest.json
+        packaging/pam/omarchy-lock-face
 )
 
 target_link_libraries(omarchy-face-unlock PRIVATE
@@ -69,5 +80,12 @@ if(BUILD_TESTING)
     )
     add_test(NAME camera-handoff
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_handoff.sh
+    )
+    add_test(NAME lock-integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lock_integration.sh
+    )
+    add_test(NAME wizard-activation
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wizard_activation.sh
+            $<TARGET_FILE:omarchy-face-unlock>
     )
 endif()
