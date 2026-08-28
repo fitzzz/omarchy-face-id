@@ -1,7 +1,7 @@
 # Initial build plan: Omarchy Face Unlock
 
 Date: 2026-08-28
-Status: Qt application implemented; system authentication intentionally not enabled
+Status: Qt application and safe Gaze runtime installation implemented; lock authentication intentionally not enabled
 
 ## Product direction
 
@@ -24,7 +24,7 @@ This creates two layers:
 - Face authentication is an optional success path, never a requirement.
 - A face mismatch, camera failure, timeout, daemon crash, missing model, update incompatibility, or app removal leaves password authentication unchanged.
 - The setup app never edits stock Omarchy files or shared PAM stacks.
-- The setup app does not install Gaze's current Arch package because its post-install script automatically changes sudo and polkit authentication.
+- The setup app never runs Gaze's Arch package scriptlet because it automatically changes sudo and polkit authentication. The repository's installer uses pacman's `--noscriptlet` protection and verifies those PAM files remain unchanged.
 - Lock-screen integration will use a dedicated face-only PAM service. It will not include `system-auth`, `pam_unix`, `pam_faillock`, sudo, or polkit.
 - The project will not clone or replace Omarchy's lock screen. If the required supported hook is absent, face unlock stays disabled.
 - Testing of real authentication begins in a disposable account or virtual machine with an out-of-band recovery route, not on the user's only login path.
@@ -58,19 +58,17 @@ The build script pins and verifies linuxdeploy, extracts its `appimagetool`, bui
 
 ## Remaining system work
 
-1. Obtain or build a Gaze runtime installation path that installs the daemon and PAM module without automatically activating sudo, polkit, login, or a shared PAM stack.
-2. Test Gaze enrollment, liveness, camera loss, daemon loss, and spoof resistance on the Logitech C920 and any infrared hardware listed as supported.
-3. Add a dedicated, face-only PAM service in a disposable test environment and prove that every failure leaves password authentication working.
-4. Integrate with a small, supported Omarchy biometric-provider hook owned by the first-party lock service. The earlier provider proposal remains in [provider-api-v1.md](provider-api-v1.md).
-5. Add a recovery-tested installer and uninstaller that are transactional, refuse to run while locked, and never alter stock password files.
-6. Test Omarchy upgrades, suspend/resume, camera reconnect, multi-monitor lock, simultaneous password/fingerprint attempts, and stale authentication callbacks.
-7. Publish only after the supported hardware table and anti-spoof claims are backed by repeatable results.
+1. Complete Gaze enrollment and test liveness, camera loss, daemon loss, and spoof resistance on the Logitech C920 and any infrared hardware listed as supported.
+2. Add a dedicated, face-only PAM service in a disposable test environment and prove that every failure leaves password authentication working.
+3. Integrate with a small, supported Omarchy biometric-provider hook owned by the first-party lock service. The earlier provider proposal remains in [provider-api-v1.md](provider-api-v1.md).
+4. Add a recovery-tested uninstaller that refuses to run while locked and never alters stock password files.
+5. Test Omarchy upgrades, suspend/resume, camera reconnect, multi-monitor lock, simultaneous password/fingerprint attempts, and stale authentication callbacks.
+6. Publish only after the supported hardware table and anti-spoof claims are backed by repeatable results.
 
 ## Release gates
 
 A lock-screen-enabled release is blocked until all of these are true:
 
-- Gaze has a narrow no-auto-activation installation route.
 - Omarchy exposes a supported authentication-provider hook or accepts the proposed equivalent.
 - Password-priority cancellation and late-result rejection are verified end to end.
 - Installation, upgrade, failure, and removal recovery tests pass.

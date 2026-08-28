@@ -66,4 +66,7 @@ if(BUILD_TESTING)
     add_test(NAME packaging-script
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_packaging_script.sh
     )
+    add_test(NAME gaze-install-script
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gaze_install_script.sh
+    )
 endif()

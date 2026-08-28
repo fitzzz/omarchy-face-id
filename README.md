@@ -13,9 +13,19 @@ The current build includes:
 
 ## Current safety boundary
 
-The app does **not** install a PAM module, edit `/etc/pam.d`, alter Omarchy's lock screen, or enable face unlocking by itself. Gaze's current Arch installer changes sudo and polkit authentication automatically, so this project does not run that installer. That behavior is too broad for a password-first setup.
+The app does **not** edit `/etc/pam.d`, alter Omarchy's lock screen, or enable face unlocking by itself. Gaze's Arch package normally changes sudo and polkit authentication automatically. This project installs the verified package with pacman's `--noscriptlet` protection, then checks that the password, sudo, and polkit PAM files did not change.
 
 The AppImage is the setup and enrollment interface. Actual lock-screen authentication will still require a separately reviewed Gaze daemon/PAM installation and a safe Omarchy integration point. Until those pieces exist, finishing the walkthrough does not change how the computer unlocks.
+
+## Install Gaze safely on Omarchy
+
+Run this as your normal user:
+
+```bash
+./scripts/install-gaze-arch.sh
+```
+
+The script downloads Gaze 0.2.12 from its official GitHub release, verifies the pinned SHA-256 digest, installs it with package scriptlets disabled, verifies protected PAM files are unchanged, and enables only `gazed.service`. Afterward, run `gaze doctor` and open the AppImage to enroll.
 
 ## Run the current AppImage
 
@@ -53,6 +63,6 @@ The local preview sequence does not perform recognition or liveness detection an
 
 ## Project status
 
-This is an early development build, not a complete lock-screen authentication product. The remaining system work is intentionally blocked on a narrow Gaze installation method that does not modify unrelated PAM services, followed by recovery-tested Omarchy lock integration. See [the initial build plan](docs/2026-08-28-initial-build.md).
+This is an early development build, not a complete lock-screen authentication product. The Gaze runtime now has a narrow installation method that leaves unrelated PAM services alone. The remaining blocker is a recovery-tested extension point in Omarchy's first-party lock service. See [the initial build plan](docs/2026-08-28-initial-build.md).
 
 Project code is GPL-3.0-or-later. The Lucide-derived eye geometry is covered by the notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
