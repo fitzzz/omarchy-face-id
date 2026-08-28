@@ -77,11 +77,13 @@ ApplicationWindow {
 
     function readinessTitle() {
         if (gazeClient.faceSetupInstalling)
-            return "Installing Gaze Package…"
+            return gazeClient.installed
+                ? "Starting Gaze Service…"
+                : "Installing Gaze Package…"
         if (gazeReady)
             return "Camera Ready"
         if (!gazeClient.installed)
-            return "One Quick Setup"
+            return "Install Gaze from AUR"
         if (!gazeClient.serviceAvailable)
             return "Face Scanning Is Offline"
         return "Camera Unavailable"
@@ -95,7 +97,7 @@ ApplicationWindow {
         if (gazeReady)
             return "Video is processed locally and is never saved."
         if (!gazeClient.installed)
-            return "Installs the official Gaze package, which may also add face approval to sudo. Your password continues to work."
+            return "Gaze powers facial authentication with local liveness anti-spoofing and support for infrared (IR) cameras for secure authentication."
         if (!gazeClient.serviceAvailable)
             return "Start the face-scanning service, then check again."
         return "Close other camera apps, then check again."
@@ -281,7 +283,7 @@ ApplicationWindow {
 
                     Text {
                         anchors.fill: parent
-                        text: "Face ID adds a faster way to unlock. Your password continues to work too."
+                        text: "Face ID adds a faster way to unlock."
                         color: root.mutedColor
                         font.family: "monospace"
                         font.pixelSize: 13
@@ -435,7 +437,10 @@ ApplicationWindow {
                             }
                             ThemedActionButton {
                                 text: gazeClient.faceSetupInstalling
-                                    ? "Installing…" : "Install Gaze Package"
+                                    ? (gazeClient.installed ? "Starting…" : "Installing…")
+                                    : (gazeClient.installed
+                                        ? "Start Gaze Service"
+                                        : "Install Gaze Package")
                                 visible: !gazeClient.installed
                                     || !gazeClient.serviceAvailable
                                 primary: true

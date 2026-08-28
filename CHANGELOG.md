@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.2 - 2026-08-28
+
+- Explain Gaze in terms of local liveness detection and infrared camera support instead of exposing unrelated package side effects.
+- Rename the dependency step to **Install Gaze from AUR**.
+- Remove the repeated password reassurance from the setup interface.
+- Show **Start Gaze Service** instead of an installation action when Gaze is already present but stopped.
+
 ## 0.5.1 - 2026-08-28
 
 - Remove the ambiguous legacy unversioned AppImage during packaging so testers cannot accidentally receive a stale setup flow.

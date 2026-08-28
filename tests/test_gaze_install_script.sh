@@ -16,6 +16,7 @@ grep -Fq 'OMARCHY_FACE_ID_GAZE_PATH' "$client"
 grep -Fq 'QStringLiteral(":/scripts/install-gaze-arch.sh")' "$client"
 grep -Fq 'text: gazeClient.faceSetupInstalling' "$main_qml"
 grep -Fq ': "Install Gaze Package"' "$main_qml"
+grep -Fq '? "Start Gaze Service"' "$main_qml"
 grep -Fq 'onClicked: gazeClient.installFaceSetup()' "$main_qml"
 
 if rg -q 'pacman -U|curl .*gaze|packages\.gundulabs' "$script"; then
