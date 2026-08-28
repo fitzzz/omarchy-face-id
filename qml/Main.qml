@@ -17,18 +17,20 @@ ApplicationWindow {
     title: "Omarchy Face Unlock"
     color: backgroundColor
 
-    readonly property color backgroundColor: "#0d1513"
-    readonly property color sidebarColor: "#101b17"
-    readonly property color surfaceColor: "#14211c"
-    readonly property color raisedColor: "#192821"
-    readonly property color borderColor: "#355046"
-    readonly property color textColor: "#d5ddd8"
-    readonly property color mutedColor: "#79877f"
-    readonly property color accentColor: "#65d1a7"
-    readonly property color amberColor: "#f59e0b"
+    readonly property color backgroundColor: gazeClient.themeDarkerBackground
+    readonly property color sidebarColor: gazeClient.themeDarkBackground
+    readonly property color surfaceColor: gazeClient.themeBackground
+    readonly property color raisedColor: gazeClient.themeLighterBackground
+    readonly property color borderColor: gazeClient.themeMuted
+    readonly property color textColor: gazeClient.themeForeground
+    readonly property color mutedColor: gazeClient.themeMuted
+    readonly property color accentColor: gazeClient.themeAccent
+    readonly property color amberColor: gazeClient.themeOrange
+    readonly property color successColor: gazeClient.themeGreen
+    readonly property color errorColor: gazeClient.themeRed
     readonly property var stepNames: ["Welcome", "Camera", "Gaze", "Enroll", "Finish"]
 
-    property int currentStep: 0
+    property int currentStep: Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 1 : 0
     property bool enrollmentStarted: false
     property bool realEnrollment: false
     property bool demoFinished: false
@@ -45,8 +47,11 @@ ApplicationWindow {
     readonly property bool cameraPresent: mediaDevices.videoInputs.length > 0
     readonly property bool gazeReady: gazeClient.serviceAvailable
         && gazeClient.cameraAvailable
-    readonly property bool localPreviewActive: currentStep === 1
-        || (currentStep === 3 && (!enrollmentStarted || !realEnrollment))
+    // Gaze needs exclusive ownership while real enrollment is available. Drop
+    // the Qt pipeline as soon as the camera-check page is left, rather than
+    // racing to release it after the user presses Start enrollment.
+    readonly property bool localPreviewActive: !gazeClient.installed
+        && (currentStep === 1 || currentStep === 3)
     readonly property string activePrompt: realEnrollment
         ? friendlyPrompt(gazeClient.enrollmentPrompt) : demoPrompt
     readonly property int activeProgress: realEnrollment
@@ -110,17 +115,20 @@ ApplicationWindow {
 
     MediaDevices { id: mediaDevices }
 
-    Camera {
-        id: camera
+    Loader {
+        id: localCameraLoader
         active: root.localPreviewActive && root.cameraPresent
-        cameraDevice: cameraSelector.currentIndex >= 0
-            && cameraSelector.currentIndex < mediaDevices.videoInputs.length
-            ? mediaDevices.videoInputs[cameraSelector.currentIndex]
-            : mediaDevices.defaultVideoInput
+        sourceComponent: Camera {
+            active: true
+            cameraDevice: cameraSelector.currentIndex >= 0
+                && cameraSelector.currentIndex < mediaDevices.videoInputs.length
+                ? mediaDevices.videoInputs[cameraSelector.currentIndex]
+                : mediaDevices.defaultVideoInput
+        }
     }
 
     CaptureSession {
-        camera: camera
+        camera: localCameraLoader.item
         videoOutput: root.currentStep === 1 ? cameraOutput : enrollmentCameraOutput
     }
 
@@ -191,6 +199,11 @@ ApplicationWindow {
         }
     }
 
+    component ThemedActionButton: ActionButton {
+        accentColor: root.accentColor
+        textColor: primary ? root.backgroundColor : root.textColor
+    }
+
     component StatusRow: Rectangle {
         property string label: ""
         property string detail: ""
@@ -214,7 +227,7 @@ ApplicationWindow {
                 height: 10
                 radius: 5
                 color: parent.parent.ok ? root.accentColor
-                    : parent.parent.warning ? root.amberColor : "#d16d6d"
+                    : parent.parent.warning ? root.amberColor : root.errorColor
             }
             ColumnLayout {
                 Layout.fillWidth: true
@@ -294,7 +307,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 84
                     radius: 7
-                    color: "#15231d"
+                    color: root.surfaceColor
                     border.width: 1
                     border.color: root.borderColor
 
@@ -397,7 +410,7 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        ActionButton {
+                        ThemedActionButton {
                             Layout.alignment: Qt.AlignHCenter
                             text: "Begin setup"
                             primary: true
@@ -415,7 +428,7 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 1 OF 4"
+                            eyebrow: "STEP 2 OF 5"
                             title: "Check your camera"
                             description: "Center your face and make sure the image is clear. The preview is never saved."
                         }
@@ -425,15 +438,15 @@ ApplicationWindow {
                             Layout.fillHeight: true
                             Layout.minimumHeight: 330
                             radius: 10
-                            color: "#080d0b"
+                            color: root.backgroundColor
                             border.width: 2
-                            border.color: root.cameraPresent ? root.accentColor : "#71484a"
+                            border.color: root.cameraPresent ? root.accentColor : root.errorColor
                             clip: true
 
                             VideoOutput {
                                 id: cameraOutput
                                 anchors.fill: parent
-                                visible: root.cameraPresent
+                                visible: root.localPreviewActive && root.cameraPresent
                                 fillMode: VideoOutput.PreserveAspectCrop
                             }
 
@@ -444,7 +457,7 @@ ApplicationWindow {
                                 EyeIndicator {
                                     Layout.alignment: Qt.AlignHCenter
                                     state: "unavailable"
-                                    backgroundColor: "#080d0b"
+                                    backgroundColor: root.backgroundColor
                                 }
                                 Text {
                                     text: "No camera found"
@@ -454,19 +467,44 @@ ApplicationWindow {
                                 }
                             }
 
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                visible: root.gazeReady
+                                spacing: 12
+                                EyeIndicator {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    state: "success"
+                                    backgroundColor: root.backgroundColor
+                                    successColor: root.successColor
+                                }
+                                Text {
+                                    text: "Camera reserved for Gaze"
+                                    color: root.textColor
+                                    font.family: "monospace"
+                                    font.pixelSize: 16
+                                }
+                                Text {
+                                    text: "The live feed begins after authorization."
+                                    color: root.mutedColor
+                                    font.family: "monospace"
+                                    font.pixelSize: 11
+                                }
+                            }
+
                             Rectangle {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
                                 height: 50
-                                color: "#cc0d1513"
+                                color: Qt.rgba(root.backgroundColor.r, root.backgroundColor.g,
+                                               root.backgroundColor.b, 0.82)
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.leftMargin: 14
                                     anchors.rightMargin: 14
                                     Text {
                                         text: root.cameraPresent ? "● LIVE — NOT RECORDING" : "CAMERA UNAVAILABLE"
-                                        color: root.cameraPresent ? root.accentColor : "#d16d6d"
+                                        color: root.cameraPresent ? root.accentColor : root.errorColor
                                         font.family: "monospace"
                                         font.pixelSize: 11
                                         font.weight: Font.Bold
@@ -485,9 +523,9 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            ActionButton { text: "Back"; onClicked: root.currentStep = 0 }
+                            ThemedActionButton { text: "Back"; onClicked: root.currentStep = 0 }
                             Item { Layout.fillWidth: true }
-                            ActionButton {
+                            ThemedActionButton {
                                 text: "Camera looks good"
                                 primary: true
                                 enabled: root.cameraPresent
@@ -508,7 +546,7 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 2 OF 4"
+                            eyebrow: "STEP 3 OF 5"
                             title: "Check Gaze"
                             description: "Gaze handles local face recognition and liveness. The portable app talks to its system service when it is installed."
                         }
@@ -544,7 +582,7 @@ ApplicationWindow {
                             radius: 7
                             color: root.surfaceColor
                             border.width: 1
-                            border.color: root.gazeReady ? root.borderColor : "#725b2f"
+                            border.color: root.gazeReady ? root.borderColor : root.amberColor
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.margins: 16
@@ -574,7 +612,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             visible: gazeClient.errorMessage.length > 0
                             text: gazeClient.errorMessage
-                            color: "#d98989"
+                            color: root.errorColor
                             font.family: "monospace"
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -584,13 +622,13 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            ActionButton { text: "Back"; onClicked: root.currentStep = 1 }
-                            ActionButton {
+                            ThemedActionButton { text: "Back"; onClicked: root.currentStep = 1 }
+                            ThemedActionButton {
                                 text: "Recheck"
                                 onClicked: gazeClient.refresh()
                             }
                             Item { Layout.fillWidth: true }
-                            ActionButton {
+                            ThemedActionButton {
                                 text: root.gazeReady ? "Continue" : "Preview walkthrough"
                                 primary: true
                                 accentColor: root.accentColor
@@ -608,7 +646,7 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 3 OF 4"
+                            eyebrow: "STEP 4 OF 5"
                             title: enrollmentStarted ? root.activePrompt : "Capture five angles"
                             description: enrollmentStarted
                                 ? (realEnrollment ? "Follow the prompt and move only slightly. Gaze captures automatically."
@@ -621,7 +659,7 @@ ApplicationWindow {
                             Layout.fillHeight: true
                             Layout.minimumHeight: 330
                             radius: 10
-                            color: "#080d0b"
+                            color: root.backgroundColor
                             border.width: 2
                             border.color: enrollmentStarted ? root.amberColor : root.accentColor
                             clip: true
@@ -659,7 +697,8 @@ ApplicationWindow {
                                 width: Math.min(parent.width - 40, 430)
                                 height: 78
                                 radius: 9
-                                color: "#e8111c18"
+                                color: Qt.rgba(root.sidebarColor.r, root.sidebarColor.g,
+                                               root.sidebarColor.b, 0.91)
                                 border.width: 1
                                 border.color: root.borderColor
                                 RowLayout {
@@ -670,7 +709,9 @@ ApplicationWindow {
                                         iconSize: 50
                                         state: enrollmentStarted ? "checking" : "searching"
                                         gazeDirection: enrollmentStarted ? root.activePose : "auto"
-                                        backgroundColor: "#111c18"
+                                        backgroundColor: root.sidebarColor
+                                        checkingColor: root.amberColor
+                                        successColor: root.successColor
                                     }
                                     ColumnLayout {
                                         Layout.fillWidth: true
@@ -703,7 +744,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            ActionButton {
+                            ThemedActionButton {
                                 text: enrollmentStarted ? "Cancel" : "Back"
                                 onClicked: {
                                     if (enrollmentStarted)
@@ -713,13 +754,24 @@ ApplicationWindow {
                                 }
                             }
                             Item { Layout.fillWidth: true }
-                            ActionButton {
+                            ThemedActionButton {
                                 visible: !enrollmentStarted
-                                text: root.gazeReady ? "Start enrollment" : "Start preview"
+                                text: root.gazeReady ? "Authorize and Scan Face" : "Start preview"
                                 primary: true
                                 accentColor: root.accentColor
                                 onClicked: root.startEnrollment()
                             }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: !enrollmentStarted && root.gazeReady
+                            text: "Gaze will request your system password to authorize creating a biometric credential."
+                            color: root.mutedColor
+                            font.family: "monospace"
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignRight
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }
@@ -783,14 +835,14 @@ ApplicationWindow {
                         RowLayout {
                             Layout.alignment: Qt.AlignHCenter
                             spacing: 12
-                            ActionButton {
+                            ThemedActionButton {
                                 text: "Run again"
                                 onClicked: {
                                     root.cancelEnrollment()
                                     root.currentStep = 1
                                 }
                             }
-                            ActionButton {
+                            ThemedActionButton {
                                 text: "Done"
                                 primary: true
                                 accentColor: root.accentColor

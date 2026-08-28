@@ -6,9 +6,15 @@
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusReply>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QHash>
+#include <QRegularExpression>
+#include <QTextStream>
 
 #include <pwd.h>
+#include <cstdio>
 #include <unistd.h>
 
 namespace {
@@ -28,6 +34,18 @@ QDBusInterface gazeInterface()
 GazeClient::GazeClient(QObject *parent)
     : QObject(parent)
 {
+    m_themeRoot = qEnvironmentVariable("OMARCHY_FACE_UNLOCK_THEME_ROOT",
+                                       QDir::homePath()
+                                           + QStringLiteral("/.local/state/omarchy/current"));
+    m_themeReloadTimer.setSingleShot(true);
+    m_themeReloadTimer.setInterval(40);
+    connect(&m_themeReloadTimer, &QTimer::timeout, this, &GazeClient::reloadTheme);
+    connect(&m_themeWatcher, &QFileSystemWatcher::fileChanged,
+            this, &GazeClient::scheduleThemeReload);
+    connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged,
+            this, &GazeClient::scheduleThemeReload);
+    reloadTheme();
+
     auto bus = QDBusConnection::systemBus();
     bus.connect(QString::fromLatin1(serviceName),
                 QString::fromLatin1(objectPath),
@@ -66,6 +84,16 @@ QString GazeClient::enrollmentPrompt() const { return m_enrollmentPrompt; }
 QString GazeClient::faceStatus() const { return m_faceStatus; }
 QString GazeClient::previewDataUrl() const { return m_previewDataUrl; }
 QString GazeClient::errorMessage() const { return m_errorMessage; }
+QColor GazeClient::themeBackground() const { return m_themeBackground; }
+QColor GazeClient::themeDarkBackground() const { return m_themeDarkBackground; }
+QColor GazeClient::themeDarkerBackground() const { return m_themeDarkerBackground; }
+QColor GazeClient::themeLighterBackground() const { return m_themeLighterBackground; }
+QColor GazeClient::themeForeground() const { return m_themeForeground; }
+QColor GazeClient::themeMuted() const { return m_themeMuted; }
+QColor GazeClient::themeAccent() const { return m_themeAccent; }
+QColor GazeClient::themeOrange() const { return m_themeOrange; }
+QColor GazeClient::themeGreen() const { return m_themeGreen; }
+QColor GazeClient::themeRed() const { return m_themeRed; }
 
 void GazeClient::refresh()
 {
@@ -214,4 +242,74 @@ void GazeClient::setError(const QString &message)
         return;
     m_errorMessage = message;
     emit errorChanged();
+}
+
+void GazeClient::scheduleThemeReload()
+{
+    m_themeReloadTimer.start();
+}
+
+void GazeClient::reloadTheme()
+{
+    const QString themeDirectory = m_themeRoot + QStringLiteral("/theme");
+    const QString colorsPath = themeDirectory + QStringLiteral("/colors.toml");
+    const QString themeNamePath = m_themeRoot + QStringLiteral("/theme.name");
+
+    QFile colorsFile(colorsPath);
+    if (!colorsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        scheduleThemeReload();
+        return;
+    }
+
+    const QString contents = QTextStream(&colorsFile).readAll();
+    const QRegularExpression entry(
+        QStringLiteral("(?m)^\\s*([A-Za-z0-9_-]+)\\s*=\\s*[\\\"']?(#[0-9A-Fa-f]{6,8})"));
+    QHash<QString, QColor> colors;
+    auto matchIterator = entry.globalMatch(contents);
+    while (matchIterator.hasNext()) {
+        const auto match = matchIterator.next();
+        const QColor color(match.captured(2));
+        if (color.isValid())
+            colors.insert(match.captured(1), color);
+    }
+
+    bool changed = false;
+    const auto apply = [&colors, &changed](const QString &key, QColor &target) {
+        const auto candidate = colors.constFind(key);
+        if (candidate != colors.cend() && candidate.value() != target) {
+            target = candidate.value();
+            changed = true;
+        }
+    };
+    apply(QStringLiteral("background"), m_themeBackground);
+    apply(QStringLiteral("dark_background"), m_themeDarkBackground);
+    apply(QStringLiteral("darker_background"), m_themeDarkerBackground);
+    apply(QStringLiteral("lighter_background"), m_themeLighterBackground);
+    apply(QStringLiteral("foreground"), m_themeForeground);
+    apply(QStringLiteral("muted"), m_themeMuted);
+    apply(QStringLiteral("accent"), m_themeAccent);
+    apply(QStringLiteral("orange"), m_themeOrange);
+    apply(QStringLiteral("green"), m_themeGreen);
+    apply(QStringLiteral("red"), m_themeRed);
+
+    const auto watchedFiles = m_themeWatcher.files();
+    if (!watchedFiles.isEmpty())
+        m_themeWatcher.removePaths(watchedFiles);
+    const auto watchedDirectories = m_themeWatcher.directories();
+    if (!watchedDirectories.isEmpty())
+        m_themeWatcher.removePaths(watchedDirectories);
+    for (const auto &path : {m_themeRoot, themeDirectory}) {
+        if (QFileInfo(path).isDir())
+            m_themeWatcher.addPath(path);
+    }
+    for (const auto &path : {colorsPath, themeNamePath}) {
+        if (QFileInfo(path).isFile())
+            m_themeWatcher.addPath(path);
+    }
+
+    std::fprintf(stderr, "Omarchy theme loaded: %s\n",
+                 m_themeAccent.name().toUtf8().constData());
+    std::fflush(stderr);
+    if (changed)
+        emit themeChanged();
 }

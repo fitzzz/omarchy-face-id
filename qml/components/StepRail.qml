@@ -35,7 +35,8 @@ Item {
                     width: 1
                     height: 30
                     visible: row.index < root.steps.length - 1
-                    color: row.index < root.currentStep ? root.accentColor : "#34413b"
+                    color: row.index < root.currentStep ? root.accentColor : root.mutedColor
+                    opacity: row.index < root.currentStep ? 1 : 0.38
                 }
 
                 Rectangle {
@@ -46,14 +47,14 @@ Item {
                     radius: 14
                     color: row.index < root.currentStep
                         ? root.accentColor
-                        : row.index === root.currentStep ? "#203a30" : "#18231f"
+                        : "transparent"
                     border.width: row.index === root.currentStep ? 2 : 1
-                    border.color: row.index <= root.currentStep ? root.accentColor : "#3a4741"
+                    border.color: row.index <= root.currentStep ? root.accentColor : root.mutedColor
 
                     Text {
                         anchors.centerIn: parent
                         text: row.index < root.currentStep ? "✓" : String(row.index + 1)
-                        color: row.index < root.currentStep ? "#10201a"
+                        color: row.index < root.currentStep ? root.textColor
                             : row.index === root.currentStep ? root.accentColor : root.mutedColor
                         font.family: "monospace"
                         font.pixelSize: 12

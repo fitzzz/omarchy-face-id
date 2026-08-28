@@ -69,4 +69,7 @@ if(BUILD_TESTING)
     add_test(NAME gaze-install-script
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gaze_install_script.sh
     )
+    add_test(NAME camera-handoff
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_handoff.sh
+    )
 endif()
