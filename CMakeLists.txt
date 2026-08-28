@@ -86,6 +86,10 @@ if(BUILD_TESTING)
     set_tests_properties(uninstall-cli PROPERTIES ENVIRONMENT
         "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
     )
+    add_test(NAME uninstall-tty
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_uninstall_tty.sh
+            $<TARGET_FILE:omarchy-face-id>
+    )
     add_test(NAME camera-handoff
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_handoff.sh
     )

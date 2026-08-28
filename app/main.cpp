@@ -37,7 +37,17 @@ int runUninstaller(int argc, char *argv[])
         QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     QStringList arguments = app.arguments().mid(uninstallArgument + 1);
     arguments.prepend(uninstallScript.fileName());
-    return QProcess::execute(QStringLiteral("/usr/bin/bash"), arguments);
+
+    QProcess uninstallProcess;
+    uninstallProcess.setInputChannelMode(QProcess::ForwardedInputChannel);
+    uninstallProcess.setProcessChannelMode(QProcess::ForwardedChannels);
+    uninstallProcess.start(QStringLiteral("/usr/bin/bash"), arguments);
+    if (!uninstallProcess.waitForStarted())
+        return 1;
+    if (!uninstallProcess.waitForFinished(-1)
+        || uninstallProcess.exitStatus() != QProcess::NormalExit)
+        return 1;
+    return uninstallProcess.exitCode();
 }
 }
 

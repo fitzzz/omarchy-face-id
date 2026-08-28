@@ -7,6 +7,7 @@
 - Clarify that Omarchy Face ID is a standalone app with an Omarchy lock-screen subscriber.
 - Wait five seconds before face authentication, keep displays awake while it runs, and restore them after unlock.
 - Move the lock-screen Face ID indicator slightly higher.
+- Forward terminal input through the AppImage so interactive uninstall confirmation works.
 
 ## 0.3.0 - 2026-08-28
 
