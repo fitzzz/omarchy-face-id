@@ -1,14 +1,14 @@
 # Omarchy Face Unlock
 
-Omarchy Face Unlock is a Qt 6/QML setup app for checking a webcam and enrolling a face with [Gaze](https://github.com/GunduLabs/gaze). It is designed around one rule: face recognition may add a way in, but it must never take the password path away.
+Omarchy Face Unlock is a Qt 6/QML setup app for enrolling a face with [Gaze](https://github.com/GunduLabs/gaze). It is designed around one rule: face recognition may add a way in, but it must never take the password path away.
 
 The current build includes:
 
 - a Gaze-owned live feed during enrollment;
 - an animated eye that looks left, center, and right and blinks;
 - a five-angle guided enrollment walkthrough;
-- real Gaze enrollment through its system D-Bus service when Gaze is available;
-- a safe preview mode when Gaze is absent; and
+- real Gaze enrollment through its system D-Bus service;
+- a four-screen Welcome, Ready, Scan, and Done journey; and
 - an Omarchy-targeted AppImage build.
 
 ## Current safety boundary
@@ -38,7 +38,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_Unlock-x86_64.AppImage
 
 ## Build from source
 
-Requirements: CMake 3.24 or newer, Ninja, a C++20 compiler, and Qt 6.7 or newer with Core, DBus, Gui, Multimedia, Quick, and Quick Controls 2.
+Requirements: CMake 3.24 or newer, Ninja, a C++20 compiler, and Qt 6.7 or newer with Core, DBus, Gui, Quick, and Quick Controls 2.
 
 ```bash
 cmake -S . -B build-native -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -59,7 +59,7 @@ The script downloads a pinned, checksum-verified linuxdeploy release to obtain `
 
 When `com.gundulabs.Gaze` is present on the system bus, the app claims the current user, starts enrollment, receives Gaze's prompts and preview frames, and releases the claim on completion or cancellation. When the service is missing or stops responding, the app reports that enrollment is unavailable and leaves the operating system untouched.
 
-The local preview sequence does not perform recognition or liveness detection and does not save biometric data. Those security-sensitive jobs belong to Gaze.
+Gaze is the sole camera owner. The Qt app receives Gaze's preview frames and never opens a competing camera pipeline. Face matching, liveness detection, and biometric storage remain Gaze's responsibility.
 
 ## Project status
 

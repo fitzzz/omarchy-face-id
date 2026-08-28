@@ -31,10 +31,12 @@ This creates two layers:
 
 ## Implemented application flow
 
-1. **Welcome:** explains local processing and the password fallback.
-2. **Gaze:** checks `/usr/bin/gaze`, the `com.gundulabs.Gaze` system service, and camera availability reported by Gaze.
-3. **Enroll:** authorizes Gaze, then guides straight, up, down, left, and right poses. With Gaze installed, prompts, progress, and preview frames come from its D-Bus API. Without Gaze, a clearly labeled Qt demonstration runs and saves nothing.
-4. **Finish:** distinguishes real Gaze enrollment from the demonstration and states that lock-screen authentication is still disabled.
+1. **Welcome:** promises face unlock with a glance and explains that the face profile stays on this computer.
+2. **Ready:** presents one human-readable camera readiness state. Package, daemon, and device details stay out of the primary journey.
+3. **Scan:** requests authorization and immediately begins the guided capture. A segmented orbital ring fills as Gaze captures straight, up, down, left, and right views.
+4. **Done:** confirms that the face profile was saved locally.
+
+The main flow never exposes binary paths, service names, PAM terminology, embeddings, or diagnostic dashboards. When readiness fails, it gives one plain-language recovery action. Technical diagnostics remain available through `gaze doctor` outside the wizard.
 
 Closing or cancelling the application stops the walkthrough and releases its Gaze claim. Opening it never changes PAM or Omarchy configuration.
 
@@ -47,7 +49,7 @@ The client uses Gaze's system D-Bus service:
 - calls: `Claim`, `Release`, `EnrollStart`, `EnrollStop`, and `IsCameraAvailable`
 - signals: `EnrollStatus`, `FaceStatus`, and `PreviewFrame`
 
-Gaze owns face matching, local embeddings, liveness checks, infrared support, model files, and biometric storage. The Qt app must not reimplement those security-sensitive responsibilities or claim that its demonstration mode performs liveness detection.
+Gaze owns face matching, local embeddings, liveness checks, infrared support, model files, camera capture, and biometric storage. The Qt app does not reimplement those security-sensitive responsibilities or construct a competing camera pipeline.
 
 ## Packaging decision
 

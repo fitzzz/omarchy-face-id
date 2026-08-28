@@ -14,7 +14,6 @@ find_package(Qt6 6.7 REQUIRED COMPONENTS
     Core
     DBus
     Gui
-    Multimedia
     Quick
     QuickControls2
 )
@@ -42,7 +41,6 @@ target_link_libraries(omarchy-face-unlock PRIVATE
     Qt6::Core
     Qt6::DBus
     Qt6::Gui
-    Qt6::Multimedia
     Qt6::Quick
     Qt6::QuickControls2
 )

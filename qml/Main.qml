@@ -3,7 +3,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtMultimedia
 import "components"
 
 ApplicationWindow {
@@ -28,52 +27,37 @@ ApplicationWindow {
     readonly property color amberColor: gazeClient.themeOrange
     readonly property color successColor: gazeClient.themeGreen
     readonly property color errorColor: gazeClient.themeRed
-    readonly property var stepNames: ["Welcome", "Gaze", "Enroll", "Finish"]
+    readonly property var stepNames: ["Welcome", "Ready", "Scan", "Done"]
 
     property int currentStep: Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
     property bool enrollmentStarted: false
-    property bool realEnrollment: false
-    property bool demoFinished: false
-    property int demoProgress: 0
-    property string demoPrompt: "Face the camera"
-    property string demoPose: "center"
-    readonly property var demoPrompts: [
-        { text: "Face the camera", pose: "center" },
-        { text: "Tilt your face slightly up", pose: "center" },
-        { text: "Tilt your face slightly down", pose: "center" },
-        { text: "Turn your face slightly left", pose: "left" },
-        { text: "Turn your face slightly right", pose: "right" }
-    ]
-    readonly property bool cameraPresent: mediaDevices.videoInputs.length > 0
-    readonly property bool gazeReady: gazeClient.serviceAvailable
+    readonly property string activePrompt: friendlyPrompt(gazeClient.enrollmentPrompt)
+    readonly property int activeProgress: gazeClient.enrollmentProgress
+    readonly property int activeMaximum: Math.max(1, gazeClient.enrollmentMaximum)
+    readonly property string activePose: poseForPrompt(gazeClient.enrollmentPrompt)
+    readonly property bool scanFailed: enrollmentStarted
+        && !beginGazeTimer.running
+        && !gazeClient.enrolling
+        && !gazeClient.enrollmentComplete
+        && ["camera-failed", "db-failed", "cancelled"].indexOf(gazeClient.enrollmentPrompt) >= 0
+    readonly property bool gazeReady: gazeClient.installed
+        && gazeClient.serviceAvailable
         && gazeClient.cameraAvailable
-    // Gaze owns the camera whenever it is installed. Qt's camera exists only
-    // for the no-Gaze demonstration on the enrollment page.
-    readonly property bool localPreviewActive: !gazeClient.installed
-        && currentStep === 2
-    readonly property string activePrompt: realEnrollment
-        ? friendlyPrompt(gazeClient.enrollmentPrompt) : demoPrompt
-    readonly property int activeProgress: realEnrollment
-        ? gazeClient.enrollmentProgress : demoProgress
-    readonly property int activeMaximum: realEnrollment
-        ? Math.max(1, gazeClient.enrollmentMaximum) : demoPrompts.length
-    readonly property string activePose: realEnrollment
-        ? poseForPrompt(gazeClient.enrollmentPrompt) : demoPose
 
     function friendlyPrompt(prompt) {
         const labels = {
-            "look-straight": "Face the camera",
-            "look-up": "Tilt your face slightly up",
-            "look-down": "Tilt your face slightly down",
-            "look-left": "Turn your face slightly left",
-            "look-right": "Turn your face slightly right",
-            "captured": "Captured — hold position",
-            "completed": "Enrollment complete",
-            "camera-failed": "The camera stopped responding",
-            "db-failed": "Gaze could not save the face profile",
-            "cancelled": "Enrollment cancelled"
+            "look-straight": "Look straight ahead",
+            "look-up": "Look up slightly",
+            "look-down": "Look down slightly",
+            "look-left": "Turn slightly left",
+            "look-right": "Turn slightly right",
+            "captured": "Perfect. Hold still.",
+            "completed": "Scan complete",
+            "camera-failed": "Camera connection lost",
+            "db-failed": "Your face scan could not be saved",
+            "cancelled": "Scan cancelled"
         }
-        return labels[String(prompt)] || String(prompt || "Hold still")
+        return labels[String(prompt)] || String(prompt || "Preparing camera…")
     }
 
     function poseForPrompt(prompt) {
@@ -85,80 +69,61 @@ ApplicationWindow {
         return "center"
     }
 
+    function readinessTitle() {
+        if (gazeReady)
+            return "Camera Ready"
+        if (!gazeClient.installed)
+            return "Setup Required"
+        if (!gazeClient.serviceAvailable)
+            return "Face Scanning Is Offline"
+        return "Camera Unavailable"
+    }
+
+    function readinessDetail() {
+        if (gazeReady)
+            return "Your face scan stays on this computer."
+        if (!gazeClient.installed)
+            return "Install the face-scanning service, then check again."
+        if (!gazeClient.serviceAvailable)
+            return "Start the face-scanning service, then check again."
+        return "Close other camera apps, then check again."
+    }
+
     function startEnrollment() {
+        gazeClient.refresh()
+        if (!gazeReady)
+            return
+        currentStep = 2
         enrollmentStarted = true
-        demoFinished = false
-        realEnrollment = root.gazeReady
-        if (realEnrollment) {
-            beginGazeTimer.restart()
-        } else {
-            demoProgress = 0
-            demoPrompt = demoPrompts[0].text
-            demoPose = demoPrompts[0].pose
-            demoTimer.restart()
-        }
+        beginGazeTimer.restart()
     }
 
     function cancelEnrollment() {
-        demoTimer.stop()
         beginGazeTimer.stop()
-        if (realEnrollment)
+        if (gazeClient.enrolling)
             gazeClient.cancelEnrollment()
         enrollmentStarted = false
-        demoProgress = 0
-        demoPrompt = demoPrompts[0].text
-        demoPose = demoPrompts[0].pose
+        if (currentStep === 2)
+            currentStep = 1
     }
 
-    onClosing: cancelEnrollment()
-
-    MediaDevices { id: mediaDevices }
-
-    Loader {
-        id: localCameraLoader
-        active: root.localPreviewActive && root.cameraPresent
-        sourceComponent: Camera {
-            active: true
-            cameraDevice: mediaDevices.defaultVideoInput
-        }
-    }
-
-    CaptureSession {
-        camera: localCameraLoader.item
-        videoOutput: enrollmentCameraOutput
+    onClosing: {
+        if (gazeClient.enrolling)
+            gazeClient.cancelEnrollment()
     }
 
     Timer {
         id: beginGazeTimer
-        interval: 450
+        interval: 240
         repeat: false
         onTriggered: gazeClient.beginEnrollment("default")
-    }
-
-    Timer {
-        id: demoTimer
-        interval: 1650
-        repeat: true
-        onTriggered: {
-            demoProgress += 1
-            if (demoProgress >= demoPrompts.length) {
-                stop()
-                demoFinished = true
-                currentStep = 3
-                return
-            }
-            demoPrompt = demoPrompts[demoProgress].text
-            demoPose = demoPrompts[demoProgress].pose
-        }
     }
 
     Connections {
         target: gazeClient
         function onEnrollmentChanged() {
-            if (root.realEnrollment && gazeClient.enrollmentComplete) {
-                root.demoFinished = false
+            if (gazeClient.enrollmentComplete)
                 root.currentStep = 3
-            }
         }
     }
 
@@ -181,7 +146,7 @@ ApplicationWindow {
             text: parent.title
             color: root.textColor
             font.family: "monospace"
-            font.pixelSize: 28
+            font.pixelSize: 30
             font.weight: Font.DemiBold
         }
         Text {
@@ -190,7 +155,7 @@ ApplicationWindow {
             color: root.mutedColor
             font.family: "monospace"
             font.pixelSize: 14
-            lineHeight: 1.35
+            lineHeight: 1.4
             wrapMode: Text.WordWrap
         }
     }
@@ -198,53 +163,10 @@ ApplicationWindow {
     component ThemedActionButton: ActionButton {
         accentColor: root.accentColor
         textColor: primary ? root.backgroundColor : root.textColor
-    }
-
-    component StatusRow: Rectangle {
-        property string label: ""
-        property string detail: ""
-        property bool ok: false
-        property bool warning: false
-
-        implicitHeight: 64
-        radius: 7
-        color: root.raisedColor
-        border.width: 1
-        border.color: root.borderColor
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
-            spacing: 14
-
-            Rectangle {
-                width: 10
-                height: 10
-                radius: 5
-                color: parent.parent.ok ? root.accentColor
-                    : parent.parent.warning ? root.amberColor : root.errorColor
-            }
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 3
-                Text {
-                    text: parent.parent.parent.label
-                    color: root.textColor
-                    font.family: "monospace"
-                    font.pixelSize: 14
-                    font.weight: Font.DemiBold
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: parent.parent.parent.detail
-                    color: root.mutedColor
-                    font.family: "monospace"
-                    font.pixelSize: 12
-                    elide: Text.ElideRight
-                }
-            }
-        }
+        surfaceColor: root.surfaceColor
+        hoverColor: root.raisedColor
+        borderColor: root.borderColor
+        disabledTextColor: root.mutedColor
     }
 
     RowLayout {
@@ -253,9 +175,8 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 278
+            Layout.preferredWidth: 268
             color: root.sidebarColor
-            border.width: 0
 
             ColumnLayout {
                 anchors.fill: parent
@@ -269,6 +190,7 @@ ApplicationWindow {
                         state: root.currentStep === 3 ? "success" : "searching"
                         backgroundColor: root.sidebarColor
                         neutralColor: root.accentColor
+                        successColor: root.successColor
                     }
                     ColumnLayout {
                         spacing: 1
@@ -301,9 +223,9 @@ ApplicationWindow {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 84
-                    radius: 7
-                    color: root.surfaceColor
+                    Layout.preferredHeight: 82
+                    radius: 8
+                    color: "transparent"
                     border.width: 1
                     border.color: root.borderColor
 
@@ -312,7 +234,7 @@ ApplicationWindow {
                         anchors.margins: 14
                         spacing: 5
                         Text {
-                            text: "PASSWORD FALLBACK"
+                            text: "PASSWORD BACKUP"
                             color: root.accentColor
                             font.family: "monospace"
                             font.pixelSize: 10
@@ -320,7 +242,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "This app never removes or replaces your password."
+                            text: "You can always unlock with your password."
                             color: root.mutedColor
                             font.family: "monospace"
                             font.pixelSize: 11
@@ -337,10 +259,9 @@ ApplicationWindow {
             color: root.backgroundColor
 
             StackLayout {
-                id: pages
                 anchors.fill: parent
-                anchors.leftMargin: 54
-                anchors.rightMargin: 54
+                anchors.leftMargin: 56
+                anchors.rightMargin: 56
                 anchors.topMargin: 42
                 anchors.bottomMargin: 38
                 currentIndex: root.currentStep
@@ -348,42 +269,44 @@ ApplicationWindow {
                 Item {
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 24
+                        spacing: 22
 
                         Item { Layout.fillHeight: true }
                         EyeIndicator {
                             Layout.alignment: Qt.AlignHCenter
-                            iconSize: 112
+                            iconSize: 122
                             state: "searching"
-                            neutralColor: root.amberColor
+                            neutralColor: root.accentColor
                             backgroundColor: root.backgroundColor
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Set up face unlock"
+                            text: "Setup Face Unlock"
                             color: root.textColor
                             font.family: "monospace"
-                            font.pixelSize: 32
+                            font.pixelSize: 34
                             font.weight: Font.DemiBold
                             horizontalAlignment: Text.AlignHCenter
                         }
                         Text {
-                            Layout.maximumWidth: 560
+                            Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Connect to Gaze and capture five guided angles. Everything stays on this computer."
+                            text: "Unlock your computer with a glance. Your face stays on this computer."
                             color: root.mutedColor
                             font.family: "monospace"
                             font.pixelSize: 15
-                            lineHeight: 1.4
+                            lineHeight: 1.45
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
                         }
                         ThemedActionButton {
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Begin setup"
+                            text: "Get Started"
                             primary: true
-                            accentColor: root.accentColor
-                            onClicked: root.currentStep = 1
+                            onClicked: {
+                                gazeClient.refresh()
+                                root.currentStep = 1
+                            }
                         }
                         Item { Layout.fillHeight: true }
                     }
@@ -392,98 +315,96 @@ ApplicationWindow {
                 Item {
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 18
+                        spacing: 22
 
                         PageTitle {
                             Layout.fillWidth: true
                             eyebrow: "STEP 2 OF 4"
-                            title: "Check Gaze"
-                            description: "Gaze handles local face recognition and liveness. The portable app talks to its system service when it is installed."
-                        }
-
-                        StatusRow {
-                            Layout.fillWidth: true
-                            label: "Webcam"
-                            detail: root.cameraPresent ? "A local video input is available" : "No webcam is available"
-                            ok: root.cameraPresent
-                        }
-                        StatusRow {
-                            Layout.fillWidth: true
-                            label: "Gaze command"
-                            detail: gazeClient.installed ? "/usr/bin/gaze is installed" : "Not installed — preview mode remains available"
-                            ok: gazeClient.installed
-                            warning: !gazeClient.installed
-                        }
-                        StatusRow {
-                            Layout.fillWidth: true
-                            label: "Gaze service"
-                            detail: !gazeClient.serviceAvailable
-                                ? "Not running — no face data can be saved yet"
-                                : gazeClient.cameraAvailable
-                                    ? "Connected and able to use a camera"
-                                    : "Connected, but Gaze cannot access a camera"
-                            ok: root.gazeReady
-                            warning: !root.gazeReady
+                            title: "Ready when you are"
+                            description: "Keep your face uncovered and look directly at the camera."
                         }
 
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 96
-                            radius: 7
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 330
+                            radius: 12
                             color: root.surfaceColor
                             border.width: 1
-                            border.color: root.gazeReady ? root.borderColor : root.amberColor
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                spacing: 14
-                                Text {
-                                    text: root.gazeReady ? "✓" : "!"
-                                    color: root.gazeReady ? root.accentColor : root.amberColor
-                                    font.family: "monospace"
-                                    font.pixelSize: 22
-                                    font.weight: Font.Bold
+                            border.color: root.gazeReady ? root.accentColor : root.errorColor
+
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 238
+                                height: 238
+                                radius: 119
+                                color: "transparent"
+                                border.width: 1
+                                border.color: root.gazeReady ? root.accentColor : root.mutedColor
+                                opacity: 0.6
+
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 188
+                                    height: 188
+                                    radius: 94
+                                    color: Qt.rgba(root.accentColor.r, root.accentColor.g,
+                                                   root.accentColor.b, 0.05)
+                                    border.width: 1
+                                    border.color: root.borderColor
+                                }
+                            }
+
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                spacing: 12
+                                EyeIndicator {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    iconSize: 82
+                                    state: root.gazeReady ? "success" : "unavailable"
+                                    backgroundColor: root.surfaceColor
+                                    neutralColor: root.accentColor
+                                    successColor: root.successColor
+                                    unavailableColor: root.mutedColor
                                 }
                                 Text {
-                                    Layout.fillWidth: true
-                                    text: root.gazeReady
-                                        ? "Ready for a real enrollment. Face embeddings will be managed locally by Gaze."
-                                        : "You can continue through a camera-based preview. It will demonstrate every pose without saving or enabling anything."
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.readinessTitle()
                                     color: root.textColor
                                     font.family: "monospace"
+                                    font.pixelSize: 20
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    Layout.maximumWidth: 360
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.readinessDetail()
+                                    color: root.mutedColor
+                                    font.family: "monospace"
                                     font.pixelSize: 12
-                                    lineHeight: 1.35
                                     wrapMode: Text.WordWrap
+                                    horizontalAlignment: Text.AlignHCenter
                                 }
                             }
                         }
 
-                        Text {
-                            Layout.fillWidth: true
-                            visible: gazeClient.errorMessage.length > 0
-                            text: gazeClient.errorMessage
-                            color: root.errorColor
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
-                        }
-
-                        Item { Layout.fillHeight: true }
-
                         RowLayout {
                             Layout.fillWidth: true
-                            ThemedActionButton { text: "Back"; onClicked: root.currentStep = 0 }
                             ThemedActionButton {
-                                text: "Recheck"
+                                text: "Back"
+                                onClicked: root.currentStep = 0
+                            }
+                            ThemedActionButton {
+                                text: "Check Again"
+                                visible: !root.gazeReady
                                 onClicked: gazeClient.refresh()
                             }
                             Item { Layout.fillWidth: true }
                             ThemedActionButton {
-                                text: root.gazeReady ? "Continue" : "Preview walkthrough"
+                                text: "Authorize and Scan Face"
                                 primary: true
-                                accentColor: root.accentColor
-                                enabled: root.cameraPresent
-                                onClicked: root.currentStep = 2
+                                enabled: root.gazeReady
+                                onClicked: root.startEnrollment()
                             }
                         }
                     }
@@ -497,95 +418,131 @@ ApplicationWindow {
                         PageTitle {
                             Layout.fillWidth: true
                             eyebrow: "STEP 3 OF 4"
-                            title: enrollmentStarted ? root.activePrompt : "Capture five angles"
-                            description: enrollmentStarted
-                                ? (realEnrollment ? "Follow the prompt and move only slightly. Gaze captures automatically."
-                                                  : "Preview mode is demonstrating the guided sequence. No face data is being saved.")
-                                : "Keep your shoulders still and make small, comfortable movements when prompted."
+                            title: root.activePrompt
+                            description: root.scanFailed
+                                ? "Check the camera and try again."
+                                : "Move slowly and keep your face inside the ring."
                         }
 
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.minimumHeight: 330
-                            radius: 10
-                            color: root.backgroundColor
-                            border.width: 2
-                            border.color: enrollmentStarted ? root.amberColor : root.accentColor
+                            Layout.minimumHeight: 390
+                            radius: 12
+                            color: root.surfaceColor
+                            border.width: 1
+                            border.color: root.scanFailed ? root.errorColor
+                                : gazeClient.enrolling ? root.amberColor : root.accentColor
                             clip: true
-
-                            VideoOutput {
-                                id: enrollmentCameraOutput
-                                anchors.fill: parent
-                                visible: root.localPreviewActive && root.cameraPresent
-                                fillMode: VideoOutput.PreserveAspectCrop
-                            }
 
                             Image {
                                 anchors.fill: parent
-                                visible: realEnrollment && gazeClient.previewDataUrl.length > 0
+                                visible: gazeClient.previewDataUrl.length > 0
                                 source: gazeClient.previewDataUrl
                                 fillMode: Image.PreserveAspectCrop
                                 cache: false
                             }
 
                             Rectangle {
+                                anchors.fill: parent
+                                color: Qt.rgba(root.backgroundColor.r, root.backgroundColor.g,
+                                               root.backgroundColor.b,
+                                               gazeClient.previewDataUrl.length > 0 ? 0.16 : 0)
+                            }
+
+                            Item {
+                                id: scanRing
                                 anchors.centerIn: parent
-                                width: Math.min(parent.width * 0.54, 300)
-                                height: Math.min(parent.height * 0.78, 330)
-                                radius: width / 2
-                                color: "transparent"
-                                border.width: 2
-                                border.color: enrollmentStarted ? root.amberColor : root.accentColor
-                                opacity: 0.85
+                                width: Math.min(parent.width * 0.58, 350)
+                                height: width
+                                readonly property int segmentCount: 48
+                                readonly property int filledSegments: gazeClient.enrollmentComplete
+                                    ? segmentCount
+                                    : Math.round((root.activeProgress / root.activeMaximum) * segmentCount)
+
+                                Repeater {
+                                    model: scanRing.segmentCount
+                                    delegate: Item {
+                                        required property int index
+                                        anchors.centerIn: parent
+                                        width: scanRing.width
+                                        height: scanRing.height
+                                        rotation: index * (360 / scanRing.segmentCount)
+
+                                        Rectangle {
+                                            anchors.top: parent.top
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            width: 3
+                                            height: 13
+                                            radius: 2
+                                            color: index < scanRing.filledSegments
+                                                ? root.accentColor : root.mutedColor
+                                            opacity: index < scanRing.filledSegments ? 1 : 0.24
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: parent.width - 42
+                                    height: width
+                                    radius: width / 2
+                                    color: "transparent"
+                                    border.width: 1
+                                    border.color: root.accentColor
+                                    opacity: 0.72
+                                }
+
+                                EyeIndicator {
+                                    anchors.centerIn: parent
+                                    visible: gazeClient.previewDataUrl.length === 0
+                                    iconSize: 96
+                                    state: root.scanFailed ? "unavailable" : "checking"
+                                    gazeDirection: root.activePose
+                                    backgroundColor: root.surfaceColor
+                                    checkingColor: root.amberColor
+                                    unavailableColor: root.errorColor
+                                }
                             }
 
                             Rectangle {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 anchors.bottom: parent.bottom
                                 anchors.bottomMargin: 20
-                                width: Math.min(parent.width - 40, 430)
-                                height: 78
-                                radius: 9
+                                width: Math.min(parent.width - 48, 440)
+                                height: 64
+                                radius: 10
                                 color: Qt.rgba(root.sidebarColor.r, root.sidebarColor.g,
-                                               root.sidebarColor.b, 0.91)
+                                               root.sidebarColor.b, 0.92)
                                 border.width: 1
                                 border.color: root.borderColor
-                                RowLayout {
+
+                                ColumnLayout {
                                     anchors.fill: parent
                                     anchors.margins: 12
-                                    spacing: 14
-                                    EyeIndicator {
-                                        iconSize: 50
-                                        state: enrollmentStarted ? "checking" : "searching"
-                                        gazeDirection: enrollmentStarted ? root.activePose : "auto"
-                                        backgroundColor: root.sidebarColor
-                                        checkingColor: root.amberColor
-                                        successColor: root.successColor
-                                    }
-                                    ColumnLayout {
+                                    spacing: 7
+                                    Text {
                                         Layout.fillWidth: true
-                                        spacing: 4
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: enrollmentStarted ? root.activePrompt : "Ready when you are"
-                                            color: root.textColor
-                                            font.family: "monospace"
-                                            font.pixelSize: 13
-                                            font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
-                                        }
-                                        ProgressBar {
-                                            Layout.fillWidth: true
-                                            from: 0
-                                            to: root.activeMaximum
-                                            value: root.activeProgress
-                                        }
-                                        Text {
-                                            text: root.activeProgress + " of " + root.activeMaximum + " angles"
-                                            color: root.mutedColor
-                                            font.family: "monospace"
-                                            font.pixelSize: 10
+                                        text: root.scanFailed ? root.activePrompt : "SCANNING"
+                                        color: root.scanFailed ? root.errorColor : root.textColor
+                                        font.family: "monospace"
+                                        font.pixelSize: 11
+                                        font.weight: Font.Bold
+                                        font.letterSpacing: 1.1
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 4
+                                        radius: 2
+                                        color: Qt.rgba(root.mutedColor.r, root.mutedColor.g,
+                                                       root.mutedColor.b, 0.3)
+                                        Rectangle {
+                                            width: parent.width * Math.min(1, root.activeProgress / root.activeMaximum)
+                                            height: parent.height
+                                            radius: parent.radius
+                                            color: root.accentColor
+                                            Behavior on width { NumberAnimation { duration: 260 } }
                                         }
                                     }
                                 }
@@ -595,33 +552,16 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             ThemedActionButton {
-                                text: enrollmentStarted ? "Cancel" : "Back"
-                                onClicked: {
-                                    if (enrollmentStarted)
-                                        root.cancelEnrollment()
-                                    else
-                                        root.currentStep = 1
-                                }
+                                text: "Cancel"
+                                onClicked: root.cancelEnrollment()
                             }
                             Item { Layout.fillWidth: true }
                             ThemedActionButton {
-                                visible: !enrollmentStarted
-                                text: root.gazeReady ? "Authorize and Scan Face" : "Start preview"
+                                visible: root.scanFailed
+                                text: "Try Again"
                                 primary: true
-                                accentColor: root.accentColor
                                 onClicked: root.startEnrollment()
                             }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            visible: !enrollmentStarted && root.gazeReady
-                            text: "Gaze will request your system password to authorize creating a biometric credential."
-                            color: root.mutedColor
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            horizontalAlignment: Text.AlignRight
-                            wrapMode: Text.WordWrap
                         }
                     }
                 }
@@ -634,68 +574,44 @@ ApplicationWindow {
                         Item { Layout.fillHeight: true }
                         EyeIndicator {
                             Layout.alignment: Qt.AlignHCenter
-                            iconSize: 112
-                            state: realEnrollment && gazeClient.enrollmentComplete ? "success" : "checking"
+                            iconSize: 128
+                            state: "success"
                             backgroundColor: root.backgroundColor
+                            successColor: root.successColor
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: realEnrollment && gazeClient.enrollmentComplete
-                                ? "Face enrolled" : "Walkthrough complete"
+                            text: "Face Scan Complete"
                             color: root.textColor
                             font.family: "monospace"
-                            font.pixelSize: 30
+                            font.pixelSize: 34
                             font.weight: Font.DemiBold
                             horizontalAlignment: Text.AlignHCenter
                         }
                         Text {
-                            Layout.maximumWidth: 570
+                            Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
-                            text: realEnrollment && gazeClient.enrollmentComplete
-                                ? "Gaze saved the face profile locally. Face unlocking is still disabled until the separate system integration passes its safety checks."
-                                : "You completed the guided preview. No biometric data was saved, and system authentication was not changed."
+                            text: "Your face profile is saved locally on this computer."
                             color: root.mutedColor
                             font.family: "monospace"
-                            font.pixelSize: 14
-                            lineHeight: 1.4
+                            font.pixelSize: 15
+                            lineHeight: 1.45
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
-                        }
-                        Rectangle {
-                            Layout.maximumWidth: 570
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 76
-                            Layout.alignment: Qt.AlignHCenter
-                            radius: 7
-                            color: root.surfaceColor
-                            border.width: 1
-                            border.color: root.borderColor
-                            Text {
-                                anchors.fill: parent
-                                anchors.margins: 15
-                                text: "Your face profile is stored locally by Gaze. Your password remains available if face recognition cannot complete."
-                                color: root.textColor
-                                font.family: "monospace"
-                                font.pixelSize: 12
-                                lineHeight: 1.35
-                                wrapMode: Text.WordWrap
-                                verticalAlignment: Text.AlignVCenter
-                            }
                         }
                         RowLayout {
                             Layout.alignment: Qt.AlignHCenter
                             spacing: 12
                             ThemedActionButton {
-                                text: "Run again"
+                                text: "Scan Again"
                                 onClicked: {
-                                    root.cancelEnrollment()
+                                    root.enrollmentStarted = false
                                     root.currentStep = 1
                                 }
                             }
                             ThemedActionButton {
                                 text: "Done"
                                 primary: true
-                                accentColor: root.accentColor
                                 onClicked: root.close()
                             }
                         }

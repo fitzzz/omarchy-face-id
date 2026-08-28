@@ -9,6 +9,10 @@ Button {
     property bool primary: false
     property color accentColor: "#65d1a7"
     property color textColor: primary ? "#10201a" : "#d5ddd8"
+    property color surfaceColor: "#18241f"
+    property color hoverColor: "#24322d"
+    property color borderColor: "#476258"
+    property color disabledTextColor: "#66706b"
 
     implicitWidth: Math.max(132, contentItem.implicitWidth + 40)
     implicitHeight: 44
@@ -20,7 +24,7 @@ Button {
 
     contentItem: Text {
         text: control.text
-        color: control.enabled ? control.textColor : "#66706b"
+        color: control.enabled ? control.textColor : control.disabledTextColor
         font: control.font
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
@@ -30,9 +34,9 @@ Button {
         radius: 7
         color: control.primary
             ? (control.down ? Qt.darker(control.accentColor, 1.14) : control.accentColor)
-            : (control.hovered ? "#24322d" : "#18241f")
+            : (control.hovered ? control.hoverColor : control.surfaceColor)
         border.width: control.primary ? 0 : 1
-        border.color: control.enabled ? "#476258" : "#2a3631"
+        border.color: control.borderColor
 
         Behavior on color { ColorAnimation { duration: 120 } }
     }

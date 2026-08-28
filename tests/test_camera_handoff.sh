@@ -5,19 +5,14 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 main_qml="$project_dir/qml/Main.qml"
 
-# Real Gaze enrollment must never overlap the Qt camera pipeline. Qt preview
-# exists only for the no-Gaze demonstration on the enrollment page.
-grep -Fq 'readonly property bool localPreviewActive: !gazeClient.installed' "$main_qml"
-grep -Fq 'id: localCameraLoader' "$main_qml"
-grep -Fq 'active: root.localPreviewActive && root.cameraPresent' "$main_qml"
-grep -Fq 'camera: localCameraLoader.item' "$main_qml"
-if grep -Fq 'Check your camera' "$main_qml"; then
-    echo "The redundant camera-check step still exists." >&2
+# Gaze is the only camera owner. The setup app consumes Gaze's preview frames
+# and must never construct a second Qt Multimedia camera pipeline.
+if grep -Eq 'QtMultimedia|VideoOutput|(^|[[:space:]])Camera[[:space:]]*\{' "$main_qml"; then
+    echo "The setup app contains a competing Qt camera pipeline." >&2
     exit 1
 fi
-
-if grep -Fq '(!enrollmentStarted || !realEnrollment)' "$main_qml"; then
-    echo "Qt camera ownership still overlaps the real enrollment page." >&2
+if grep -Fq 'Check your camera' "$main_qml"; then
+    echo "The redundant camera-check step still exists." >&2
     exit 1
 fi
 
