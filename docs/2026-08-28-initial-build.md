@@ -65,16 +65,18 @@ The build script pins and verifies linuxdeploy, extracts its `appimagetool`, bui
 - The user plugin watches the existing `omarchy.lock` service and begins face PAM after a short secure-surface delay.
 - Starting password authentication aborts the face attempt immediately.
 - Generation checks reject stale results from a previous lock or cancelled attempt.
-- Only `PamResult.Success` from the current face attempt may call the existing lock service's `finishUnlock()` method.
+- Only `PamResult.Success` from the current face attempt may call the existing lock service's `finishUnlock()` method. A 650 ms completion hold makes the verified checkmark visible first.
 - Missing PAM, Gaze failure, camera failure, plugin failure, or an incompatible Omarchy update leaves the ordinary password path unchanged.
+- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep while verifying, and a green checkmark on success.
+- Hyprland's non-interactive `above_lock = 1` rule lets that surface render over the session lock without receiving keyboard or pointer input. The overlay does not exclude the display from screenshots and disappears outside the active Face ID states.
 
-Omarchy 4.0 does not expose a supported visual slot inside its secure lock surface. The compatibility plugin therefore authenticates without patching a system QML file. The Face ID-inspired visual is complete in the setup app and ready for a future upstream lock-screen provider slot, but is not yet rendered on the lock screen.
+Omarchy 4.0 does not expose a supported visual slot *inside* its secure lock surface. The compatibility plugin therefore renders the status as a separate compositor layer and never patches a system QML file. If Hyprland removes or changes `above_lock`, only the visual disappears; face authentication and the first-party password screen keep their independent paths.
 
 ## Remaining system work
 
 1. Complete Gaze enrollment and test liveness, camera loss, daemon loss, and spoof resistance on the Logitech C920 and any infrared hardware listed as supported.
 2. Exercise password-first cancellation, stale-result rejection, camera loss, and daemon loss on the live lock screen with a recovery console available.
-3. Upstream the small, supported Omarchy biometric-provider and visual-status hook described in [provider-api-v1.md](provider-api-v1.md).
+3. Upstream the small, supported Omarchy biometric-provider hook described in [provider-api-v1.md](provider-api-v1.md), replacing the current internal `finishUnlock()` compatibility call.
 4. Test the recovery-safe uninstaller on the live environment.
 5. Test Omarchy upgrades, suspend/resume, camera reconnect, multi-monitor lock, and simultaneous password/fingerprint attempts.
 6. Publish only after the supported hardware table and anti-spoof claims are backed by repeatable results.

@@ -9,7 +9,8 @@ The current build includes:
 - a five-angle guided enrollment walkthrough;
 - real Gaze enrollment through its system D-Bus service;
 - a four-screen Welcome, Ready, Scan, and Done journey; and
-- an update-soft Omarchy lock-screen subscriber; and
+- an update-soft Omarchy lock-screen subscriber;
+- a click-through lock-screen face, scan-ring, and checkmark overlay; and
 - an Omarchy-targeted AppImage build.
 
 ## Platform direction
@@ -47,7 +48,7 @@ After saving a face scan, enable the lock-screen subscriber:
 ./scripts/install-lock-integration.sh
 ```
 
-Then lock the computer and look directly at the camera. Password entry remains available while Gaze checks your face.
+Then lock the computer and look directly at the camera. The lock screen shows a moving face, an orange verification sweep, and a green checkmark before it opens. Password entry remains available throughout.
 
 `APPIMAGE_EXTRACT_AND_RUN=1` avoids relying on FUSE. The package intentionally uses the Qt 6 libraries already supplied by Omarchy; bundling a second Linux multimedia stack caused loader conflicts during testing.
 
@@ -78,6 +79,6 @@ Gaze is the sole camera owner. The Qt app receives Gaze's preview frames and nev
 
 ## Project status
 
-This is an early development build. The current compatibility integration uses the first-party lock service's existing `finishUnlock()` method and checks for it at runtime. A future, supported Omarchy biometric-provider API is still preferred because it can also provide a proper face-status slot inside the lock screen. See [the initial build plan](docs/2026-08-28-initial-build.md).
+This is an early development build. The current compatibility integration uses the first-party lock service's existing `finishUnlock()` method and checks for it at runtime. Its visual is a separate, non-interactive Hyprland layer above the lock, so it does not replace the password field or patch Omarchy. A future, supported Omarchy biometric-provider API is still preferred. See [the initial build plan](docs/2026-08-28-initial-build.md).
 
 Project code is GPL-3.0-or-later. The Lucide-derived eye geometry is covered by the notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
