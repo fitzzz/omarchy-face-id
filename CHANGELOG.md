@@ -3,7 +3,7 @@
 ## 0.2.0 - 2026-08-28
 
 - Replace the experimental Omarchy plugin shell with a Qt 6/QML setup application.
-- Add a live webcam check and a five-angle guided walkthrough.
+- Add a Gaze-owned live enrollment feed and a five-angle guided walkthrough.
 - Add real enrollment support for Gaze's system D-Bus service with safe preview behavior when Gaze is absent.
 - Add the animated Lucide-derived eye states.
 - Add an Omarchy-targeted AppImage build that uses the host Qt runtime to avoid conflicting bundled system libraries.

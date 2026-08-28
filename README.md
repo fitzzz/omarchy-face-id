@@ -4,7 +4,7 @@ Omarchy Face Unlock is a Qt 6/QML setup app for checking a webcam and enrolling 
 
 The current build includes:
 
-- a live webcam preview;
+- a Gaze-owned live feed during enrollment;
 - an animated eye that looks left, center, and right and blinks;
 - a five-angle guided enrollment walkthrough;
 - real Gaze enrollment through its system D-Bus service when Gaze is available;

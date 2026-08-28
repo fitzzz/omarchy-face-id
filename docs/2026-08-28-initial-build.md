@@ -5,17 +5,17 @@ Status: Qt application and safe Gaze runtime installation implemented; lock auth
 
 ## Product direction
 
-Build a Qt 6/QML AppImage that gives Omarchy users a friendly, guided way to check their webcam and enroll with Gaze. Keep the application independent of Omarchy's lock-screen files so ordinary Omarchy updates do not overwrite it or strand the user at a broken lock screen.
+Build a Qt 6/QML AppImage that gives Omarchy users a friendly, guided way to verify Gaze readiness and enroll their face. Keep the application independent of Omarchy's lock-screen files so ordinary Omarchy updates do not overwrite it or strand the user at a broken lock screen.
 
 The experience uses a Lucide-derived eye indicator that glances left, centers, glances right, and occasionally blinks. It turns orange while checking and green after successful enrollment. The application follows Omarchy's dark, restrained visual style without copying or replacing the first-party lock screen.
 
 ## What the AppImage can and cannot solve
 
-The AppImage solves distribution of the setup interface, camera preview, diagnostics, and guided enrollment. It does not make a sandboxed application into a system authenticator. Face unlock still requires a trusted Gaze daemon, its PAM module, and a narrow connection to Omarchy's lock authentication lifecycle.
+The AppImage solves distribution of the setup interface, diagnostics, and guided enrollment. It does not make a sandboxed application into a system authenticator. Face unlock still requires a trusted Gaze daemon, its PAM module, and a narrow connection to Omarchy's lock authentication lifecycle.
 
 This creates two layers:
 
-1. **Portable setup app:** webcam preview, readiness checks, Gaze enrollment, status, and recovery guidance.
+1. **Portable setup app:** readiness checks, Gaze-owned enrollment feed, status, and recovery guidance.
 2. **System integration:** Gaze runtime, isolated PAM service, and an Omarchy-owned authentication hook. This layer is installed separately only after it passes safety and recovery tests.
 
 ## Non-negotiable safety contract
@@ -32,10 +32,9 @@ This creates two layers:
 ## Implemented application flow
 
 1. **Welcome:** explains local processing and the password fallback.
-2. **Camera:** opens the selected Qt Multimedia video input and shows a live, unsaved preview.
-3. **Gaze:** checks `/usr/bin/gaze`, the `com.gundulabs.Gaze` system service, and camera availability reported by Gaze.
-4. **Enroll:** guides straight, up, down, left, and right poses. With Gaze installed, prompts, progress, and preview frames come from its D-Bus API. Without Gaze, a clearly labeled demonstration runs and saves nothing.
-5. **Finish:** distinguishes real Gaze enrollment from the demonstration and states that lock-screen authentication is still disabled.
+2. **Gaze:** checks `/usr/bin/gaze`, the `com.gundulabs.Gaze` system service, and camera availability reported by Gaze.
+3. **Enroll:** authorizes Gaze, then guides straight, up, down, left, and right poses. With Gaze installed, prompts, progress, and preview frames come from its D-Bus API. Without Gaze, a clearly labeled Qt demonstration runs and saves nothing.
+4. **Finish:** distinguishes real Gaze enrollment from the demonstration and states that lock-screen authentication is still disabled.
 
 Closing or cancelling the application stops the walkthrough and releases its Gaze claim. Opening it never changes PAM or Omarchy configuration.
 

@@ -5,12 +5,16 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 main_qml="$project_dir/qml/Main.qml"
 
-# Real Gaze enrollment must never overlap the Qt camera pipeline. The preview
-# may remain active on the enrollment page only when Gaze is unavailable.
+# Real Gaze enrollment must never overlap the Qt camera pipeline. Qt preview
+# exists only for the no-Gaze demonstration on the enrollment page.
 grep -Fq 'readonly property bool localPreviewActive: !gazeClient.installed' "$main_qml"
 grep -Fq 'id: localCameraLoader' "$main_qml"
 grep -Fq 'active: root.localPreviewActive && root.cameraPresent' "$main_qml"
 grep -Fq 'camera: localCameraLoader.item' "$main_qml"
+if grep -Fq 'Check your camera' "$main_qml"; then
+    echo "The redundant camera-check step still exists." >&2
+    exit 1
+fi
 
 if grep -Fq '(!enrollmentStarted || !realEnrollment)' "$main_qml"; then
     echo "Qt camera ownership still overlaps the real enrollment page." >&2

@@ -28,9 +28,9 @@ ApplicationWindow {
     readonly property color amberColor: gazeClient.themeOrange
     readonly property color successColor: gazeClient.themeGreen
     readonly property color errorColor: gazeClient.themeRed
-    readonly property var stepNames: ["Welcome", "Camera", "Gaze", "Enroll", "Finish"]
+    readonly property var stepNames: ["Welcome", "Gaze", "Enroll", "Finish"]
 
-    property int currentStep: Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 1 : 0
+    property int currentStep: Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
     property bool enrollmentStarted: false
     property bool realEnrollment: false
     property bool demoFinished: false
@@ -47,11 +47,10 @@ ApplicationWindow {
     readonly property bool cameraPresent: mediaDevices.videoInputs.length > 0
     readonly property bool gazeReady: gazeClient.serviceAvailable
         && gazeClient.cameraAvailable
-    // Gaze needs exclusive ownership while real enrollment is available. Drop
-    // the Qt pipeline as soon as the camera-check page is left, rather than
-    // racing to release it after the user presses Start enrollment.
+    // Gaze owns the camera whenever it is installed. Qt's camera exists only
+    // for the no-Gaze demonstration on the enrollment page.
     readonly property bool localPreviewActive: !gazeClient.installed
-        && (currentStep === 1 || currentStep === 3)
+        && currentStep === 2
     readonly property string activePrompt: realEnrollment
         ? friendlyPrompt(gazeClient.enrollmentPrompt) : demoPrompt
     readonly property int activeProgress: realEnrollment
@@ -120,16 +119,13 @@ ApplicationWindow {
         active: root.localPreviewActive && root.cameraPresent
         sourceComponent: Camera {
             active: true
-            cameraDevice: cameraSelector.currentIndex >= 0
-                && cameraSelector.currentIndex < mediaDevices.videoInputs.length
-                ? mediaDevices.videoInputs[cameraSelector.currentIndex]
-                : mediaDevices.defaultVideoInput
+            cameraDevice: mediaDevices.defaultVideoInput
         }
     }
 
     CaptureSession {
         camera: localCameraLoader.item
-        videoOutput: root.currentStep === 1 ? cameraOutput : enrollmentCameraOutput
+        videoOutput: enrollmentCameraOutput
     }
 
     Timer {
@@ -148,7 +144,7 @@ ApplicationWindow {
             if (demoProgress >= demoPrompts.length) {
                 stop()
                 demoFinished = true
-                currentStep = 4
+                currentStep = 3
                 return
             }
             demoPrompt = demoPrompts[demoProgress].text
@@ -161,7 +157,7 @@ ApplicationWindow {
         function onEnrollmentChanged() {
             if (root.realEnrollment && gazeClient.enrollmentComplete) {
                 root.demoFinished = false
-                root.currentStep = 4
+                root.currentStep = 3
             }
         }
     }
@@ -270,7 +266,7 @@ ApplicationWindow {
                     spacing: 12
                     EyeIndicator {
                         iconSize: 40
-                        state: root.currentStep === 4 ? "success" : "searching"
+                        state: root.currentStep === 3 ? "success" : "searching"
                         backgroundColor: root.sidebarColor
                         neutralColor: root.accentColor
                     }
@@ -374,7 +370,7 @@ ApplicationWindow {
                         Text {
                             Layout.maximumWidth: 560
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Check your webcam, connect to Gaze, and capture five guided angles. Everything stays on this computer."
+                            text: "Connect to Gaze and capture five guided angles. Everything stays on this computer."
                             color: root.mutedColor
                             font.family: "monospace"
                             font.pixelSize: 15
@@ -424,129 +420,11 @@ ApplicationWindow {
                 Item {
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 20
-
-                        PageTitle {
-                            Layout.fillWidth: true
-                            eyebrow: "STEP 2 OF 5"
-                            title: "Check your camera"
-                            description: "Center your face and make sure the image is clear. The preview is never saved."
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 330
-                            radius: 10
-                            color: root.backgroundColor
-                            border.width: 2
-                            border.color: root.cameraPresent ? root.accentColor : root.errorColor
-                            clip: true
-
-                            VideoOutput {
-                                id: cameraOutput
-                                anchors.fill: parent
-                                visible: root.localPreviewActive && root.cameraPresent
-                                fillMode: VideoOutput.PreserveAspectCrop
-                            }
-
-                            ColumnLayout {
-                                anchors.centerIn: parent
-                                visible: !root.cameraPresent
-                                spacing: 12
-                                EyeIndicator {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    state: "unavailable"
-                                    backgroundColor: root.backgroundColor
-                                }
-                                Text {
-                                    text: "No camera found"
-                                    color: root.textColor
-                                    font.family: "monospace"
-                                    font.pixelSize: 16
-                                }
-                            }
-
-                            ColumnLayout {
-                                anchors.centerIn: parent
-                                visible: root.gazeReady
-                                spacing: 12
-                                EyeIndicator {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    state: "success"
-                                    backgroundColor: root.backgroundColor
-                                    successColor: root.successColor
-                                }
-                                Text {
-                                    text: "Camera reserved for Gaze"
-                                    color: root.textColor
-                                    font.family: "monospace"
-                                    font.pixelSize: 16
-                                }
-                                Text {
-                                    text: "The live feed begins after authorization."
-                                    color: root.mutedColor
-                                    font.family: "monospace"
-                                    font.pixelSize: 11
-                                }
-                            }
-
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                height: 50
-                                color: Qt.rgba(root.backgroundColor.r, root.backgroundColor.g,
-                                               root.backgroundColor.b, 0.82)
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
-                                    Text {
-                                        text: root.cameraPresent ? "● LIVE — NOT RECORDING" : "CAMERA UNAVAILABLE"
-                                        color: root.cameraPresent ? root.accentColor : root.errorColor
-                                        font.family: "monospace"
-                                        font.pixelSize: 11
-                                        font.weight: Font.Bold
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                    ComboBox {
-                                        id: cameraSelector
-                                        Layout.preferredWidth: 300
-                                        model: mediaDevices.videoInputs
-                                        textRole: "description"
-                                        enabled: root.cameraPresent
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            ThemedActionButton { text: "Back"; onClicked: root.currentStep = 0 }
-                            Item { Layout.fillWidth: true }
-                            ThemedActionButton {
-                                text: "Camera looks good"
-                                primary: true
-                                enabled: root.cameraPresent
-                                accentColor: root.accentColor
-                                onClicked: {
-                                    gazeClient.refresh()
-                                    root.currentStep = 2
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Item {
-                    ColumnLayout {
-                        anchors.fill: parent
                         spacing: 18
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 3 OF 5"
+                            eyebrow: "STEP 2 OF 4"
                             title: "Check Gaze"
                             description: "Gaze handles local face recognition and liveness. The portable app talks to its system service when it is installed."
                         }
@@ -622,7 +500,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            ThemedActionButton { text: "Back"; onClicked: root.currentStep = 1 }
+                            ThemedActionButton { text: "Back"; onClicked: root.currentStep = 0 }
                             ThemedActionButton {
                                 text: "Recheck"
                                 onClicked: gazeClient.refresh()
@@ -633,7 +511,7 @@ ApplicationWindow {
                                 primary: true
                                 accentColor: root.accentColor
                                 enabled: root.cameraPresent
-                                onClicked: root.currentStep = 3
+                                onClicked: root.currentStep = 2
                             }
                         }
                     }
@@ -646,7 +524,7 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 4 OF 5"
+                            eyebrow: "STEP 3 OF 4"
                             title: enrollmentStarted ? root.activePrompt : "Capture five angles"
                             description: enrollmentStarted
                                 ? (realEnrollment ? "Follow the prompt and move only slightly. Gaze captures automatically."
@@ -750,7 +628,7 @@ ApplicationWindow {
                                     if (enrollmentStarted)
                                         root.cancelEnrollment()
                                     else
-                                        root.currentStep = 2
+                                        root.currentStep = 1
                                 }
                             }
                             Item { Layout.fillWidth: true }
