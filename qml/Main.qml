@@ -378,34 +378,6 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
                         }
-                        Rectangle {
-                            Layout.maximumWidth: 560
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 68
-                            Layout.alignment: Qt.AlignHCenter
-                            radius: 7
-                            color: root.surfaceColor
-                            border.width: 1
-                            border.color: root.borderColor
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 15
-                                spacing: 12
-                                Text {
-                                    text: "✓"
-                                    color: root.accentColor
-                                    font.pixelSize: 18
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: "Opening this app does not enable face authentication or change PAM."
-                                    color: root.textColor
-                                    font.family: "monospace"
-                                    font.pixelSize: 12
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
                         ThemedActionButton {
                             Layout.alignment: Qt.AlignHCenter
                             text: "Begin setup"
@@ -701,7 +673,7 @@ ApplicationWindow {
                             Text {
                                 anchors.fill: parent
                                 anchors.margins: 15
-                                text: "Next: install Gaze without automatic PAM changes, test authentication, then add the isolated Omarchy lock service."
+                                text: "Your face profile is stored locally by Gaze. Your password remains available if face recognition cannot complete."
                                 color: root.textColor
                                 font.family: "monospace"
                                 font.pixelSize: 12
