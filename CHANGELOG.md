@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.6.3 - 2026-08-28
+
+- Let Gaze establish enrollment capture before attaching the optional local preview, preventing the preview from taking the camera and aborting scans on fresh laptop installations.
+
 ## 0.6.2 - 2026-08-28
 
 - Fix final lock-screen activation by following Omarchy's required plugin lifecycle: install the complete subscriber, rescan plugins, then enable it asynchronously.

@@ -403,9 +403,6 @@ void GazeClient::beginEnrollment(const QString &faceName)
     emit enrollmentChanged();
     emit previewChanged();
 
-    if (m_parallelPreviewAvailable)
-        startParallelPreview();
-
     const int enrollmentGeneration = ++m_enrollmentGeneration;
     iface.setTimeout(120000);
     auto *watcher = new QDBusPendingCallWatcher(
@@ -433,6 +430,16 @@ void GazeClient::beginEnrollment(const QString &faceName)
                 }
 
                 setError({});
+                // Enrollment owns the camera. Give Gaze time to establish its
+                // capture stream before attaching the optional shared preview;
+                // a preview must never be able to break the biometric scan.
+                QTimer::singleShot(1000, this, [this, enrollmentGeneration] {
+                    if (enrollmentGeneration == m_enrollmentGeneration
+                        && m_enrolling
+                        && m_parallelPreviewAvailable
+                        && m_previewDataUrl.isEmpty())
+                        startParallelPreview();
+                });
             });
 }
 

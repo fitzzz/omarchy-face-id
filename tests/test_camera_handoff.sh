@@ -13,6 +13,16 @@ grep -Fq 'video/x-raw,pixel-aspect-ratio=1/1; image/jpeg' \
     "$project_dir/app/GazeClient.cpp"
 grep -Fq 'decodebin' "$project_dir/app/GazeClient.cpp"
 grep -Fq 'startParallelPreview()' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'QTimer::singleShot(1000, this, [this, enrollmentGeneration]' \
+    "$project_dir/app/GazeClient.cpp"
+enroll_start_line=$(grep -nF 'iface.asyncCall(QStringLiteral("EnrollStart")' \
+    "$project_dir/app/GazeClient.cpp" | cut -d: -f1)
+preview_delay_line=$(grep -nF 'QTimer::singleShot(1000, this, [this, enrollmentGeneration]' \
+    "$project_dir/app/GazeClient.cpp" | cut -d: -f1)
+if ((preview_delay_line <= enroll_start_line)); then
+    echo "The optional preview can still take the camera before Gaze enrollment." >&2
+    exit 1
+fi
 grep -Fq 'gazeClient.previewDataUrl.length > 0' "$main_qml"
 grep -Fq 'retainWhileLoading: true' "$main_qml"
 grep -Fq "now - last < 80'000" "$project_dir/app/GazeClient.cpp"
