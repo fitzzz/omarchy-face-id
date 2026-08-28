@@ -31,6 +31,40 @@ constexpr auto interfaceName = "com.gundulabs.Gaze";
 constexpr auto facePamPath = "/etc/pam.d/omarchy-face-id-lock";
 constexpr auto pluginId = "fitzzz.face-id";
 
+bool gazeConfigAllowsParallelPreview(const QString &path)
+{
+    QFile config(path);
+    if (!config.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+
+    bool inCameras = false;
+    QString rgb;
+    QString ir;
+    const QRegularExpression entry(
+        QStringLiteral("^\\s*(rgb|ir)\\s*=\\s*[\\\"']([^\\\"']*)"));
+    QTextStream stream(&config);
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.startsWith(QLatin1Char('['))) {
+            inCameras = line == QStringLiteral("[cameras]");
+            continue;
+        }
+        if (!inCameras)
+            continue;
+        const auto match = entry.match(line);
+        if (!match.hasMatch())
+            continue;
+        if (match.captured(1) == QStringLiteral("rgb"))
+            rgb = match.captured(2).trimmed();
+        else
+            ir = match.captured(2).trimmed();
+    }
+
+    return ir.isEmpty()
+        && (rgb == QStringLiteral("primary")
+            || rgb.startsWith(QStringLiteral("pipewiresrc")));
+}
+
 QString enrollmentReceiptPath()
 {
     QString stateRoot = qEnvironmentVariable("XDG_STATE_HOME");
@@ -128,6 +162,7 @@ GazeClient::~GazeClient()
 bool GazeClient::installed() const { return m_installed; }
 bool GazeClient::serviceAvailable() const { return m_serviceAvailable; }
 bool GazeClient::cameraAvailable() const { return m_cameraAvailable; }
+bool GazeClient::parallelPreviewAvailable() const { return m_parallelPreviewAvailable; }
 bool GazeClient::enrolling() const { return m_enrolling; }
 bool GazeClient::enrollmentComplete() const { return m_enrollmentComplete; }
 int GazeClient::enrollmentProgress() const { return m_enrollmentProgress; }
@@ -155,6 +190,7 @@ void GazeClient::refresh()
     const bool wasInstalled = m_installed;
     const bool wasAvailable = m_serviceAvailable;
     const bool wasCameraAvailable = m_cameraAvailable;
+    const bool wasParallelPreviewAvailable = m_parallelPreviewAvailable;
 
     m_installed = QFileInfo(QStringLiteral("/usr/bin/gaze")).isExecutable();
     auto *busInterface = QDBusConnection::systemBus().interface();
@@ -163,6 +199,9 @@ void GazeClient::refresh()
         : QDBusReply<bool>();
     m_serviceAvailable = registered.isValid() && registered.value();
     m_cameraAvailable = false;
+    m_parallelPreviewAvailable = gazeConfigAllowsParallelPreview(
+        qEnvironmentVariable("OMARCHY_FACE_ID_GAZE_CONFIG",
+                             QStringLiteral("/etc/gaze/config.toml")));
 
     if (m_serviceAvailable) {
         auto iface = gazeInterface();
@@ -175,7 +214,8 @@ void GazeClient::refresh()
     }
 
     if (wasInstalled != m_installed || wasAvailable != m_serviceAvailable
-        || wasCameraAvailable != m_cameraAvailable)
+        || wasCameraAvailable != m_cameraAvailable
+        || wasParallelPreviewAvailable != m_parallelPreviewAvailable)
         emit availabilityChanged();
 }
 
@@ -451,14 +491,18 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
         QStringLiteral("omarchy-shell"));
     const QString enableCommand = QStandardPaths::findExecutable(
         QStringLiteral("omarchy-plugin-enable"));
-    if (rescanCommand.isEmpty()
-        || QProcess::execute(rescanCommand,
-                             {QStringLiteral("shell"),
-                              QStringLiteral("rescanPlugins")}) != 0
-        || enableCommand.isEmpty()
+    // A plugin-directory write already asks Omarchy Shell to reload. Its
+    // explicit rescan may time out while that reload is in flight even though
+    // discovery succeeded, so activation must still be attempted afterwards.
+    if (!rescanCommand.isEmpty())
+        QProcess::execute(rescanCommand,
+                          {QStringLiteral("shell"),
+                           QStringLiteral("rescanPlugins")});
+
+    if (enableCommand.isEmpty()
         || QProcess::execute(enableCommand, {QString::fromLatin1(pluginId)}) != 0) {
         m_lockIntegrationError = QStringLiteral(
-            "The files were installed, but the Omarchy plugin could not be enabled.");
+            "Face ID couldn’t be added to the lock screen. Try again.");
         emit lockIntegrationChanged();
         return;
     }

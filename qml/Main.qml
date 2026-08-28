@@ -3,6 +3,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 import "components"
 
 ApplicationWindow {
@@ -32,6 +33,9 @@ ApplicationWindow {
     property int currentStep: Qt.application.arguments.indexOf("--done-page-test") >= 0 ? 3
         : Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
     property bool enrollmentStarted: false
+    property string displayedPrompt: "Preparing camera…"
+    property string pendingPrompt: ""
+    property real scanPromptOpacity: 1
     readonly property string activePrompt: friendlyPrompt(gazeClient.enrollmentPrompt)
     readonly property int activeProgress: gazeClient.enrollmentProgress
     readonly property int activeMaximum: Math.max(1, gazeClient.enrollmentMaximum)
@@ -94,6 +98,11 @@ ApplicationWindow {
         gazeClient.refresh()
         if (!gazeReady)
             return
+        promptDelay.stop()
+        promptTransition.stop()
+        displayedPrompt = "Preparing camera…"
+        pendingPrompt = ""
+        scanPromptOpacity = 1
         currentStep = 2
         enrollmentStarted = true
         beginGazeTimer.restart()
@@ -101,12 +110,25 @@ ApplicationWindow {
 
     function cancelEnrollment() {
         beginGazeTimer.stop()
+        promptDelay.stop()
+        promptTransition.stop()
         if (gazeClient.enrolling)
             gazeClient.cancelEnrollment()
         enrollmentStarted = false
         if (currentStep === 2)
             currentStep = 1
     }
+
+    function queueScanPrompt(prompt) {
+        if (!enrollmentStarted || currentStep !== 2 || gazeClient.enrollmentComplete)
+            return
+        if (prompt === displayedPrompt && !promptTransition.running)
+            return
+        pendingPrompt = prompt
+        promptDelay.restart()
+    }
+
+    onActivePromptChanged: queueScanPrompt(activePrompt)
 
     onClosing: {
         if (gazeClient.enrolling)
@@ -135,15 +157,59 @@ ApplicationWindow {
         onTriggered: root.currentStep = 3
     }
 
+    Timer {
+        id: promptDelay
+        interval: 1000
+        repeat: false
+        onTriggered: promptTransition.restart()
+    }
+
+    SequentialAnimation {
+        id: promptTransition
+        NumberAnimation {
+            target: root
+            property: "scanPromptOpacity"
+            to: 0
+            duration: 150
+            easing.type: Easing.InOutCubic
+        }
+        ScriptAction { script: root.displayedPrompt = root.pendingPrompt }
+        NumberAnimation {
+            target: root
+            property: "scanPromptOpacity"
+            to: 1
+            duration: 220
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    MediaDevices { id: mediaDevices }
+
+    Camera {
+        id: localPreviewCamera
+        cameraDevice: mediaDevices.defaultVideoInput
+        active: root.currentStep === 2
+            && root.enrollmentStarted
+            && !gazeClient.enrollmentComplete
+            && gazeClient.parallelPreviewAvailable
+    }
+
+    CaptureSession {
+        camera: localPreviewCamera
+        videoOutput: livePreview
+    }
+
     component PageTitle: ColumnLayout {
         property string title: ""
         property string description: ""
+        property real titleOpacity: 1
         spacing: 8
 
         Text {
             Layout.fillWidth: true
             text: parent.title
             color: root.textColor
+            opacity: parent.titleOpacity
             font.family: "monospace"
             font.pixelSize: 30
             font.weight: Font.DemiBold
@@ -387,13 +453,15 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            title: root.activePrompt
+                            title: root.displayedPrompt
+                            titleOpacity: root.scanPromptOpacity
                             description: root.scanFailed
                                 ? "Check the camera and try again."
                                 : "Move slowly and keep your face inside the ring."
                         }
 
                         Rectangle {
+                            id: scanSurface
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.minimumHeight: 390
@@ -404,9 +472,22 @@ ApplicationWindow {
                                 : gazeClient.enrolling ? root.amberColor : root.accentColor
                             clip: true
 
+                            readonly property bool showingPreview:
+                                localPreviewCamera.active
+                                || gazeClient.previewDataUrl.length > 0
+
+                            VideoOutput {
+                                id: livePreview
+                                anchors.fill: parent
+                                visible: localPreviewCamera.active
+                                fillMode: VideoOutput.PreserveAspectCrop
+                                mirrored: true
+                            }
+
                             Image {
                                 anchors.fill: parent
-                                visible: gazeClient.previewDataUrl.length > 0
+                                visible: !localPreviewCamera.active
+                                    && gazeClient.previewDataUrl.length > 0
                                 source: gazeClient.previewDataUrl
                                 fillMode: Image.PreserveAspectCrop
                                 cache: false
@@ -416,7 +497,7 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 color: Qt.rgba(root.backgroundColor.r, root.backgroundColor.g,
                                                root.backgroundColor.b,
-                                               gazeClient.previewDataUrl.length > 0 ? 0.16 : 0)
+                                               scanSurface.showingPreview ? 0.16 : 0)
                             }
 
                             FaceScanIndicator {
@@ -427,7 +508,7 @@ ApplicationWindow {
                                     : root.scanFailed ? "unavailable" : "checking"
                                 direction: root.activePose
                                 progress: root.activeProgress / root.activeMaximum
-                                showAvatar: gazeClient.previewDataUrl.length === 0
+                                showAvatar: !scanSurface.showingPreview
                                 backgroundColor: root.surfaceColor
                                 primaryColor: root.successColor
                                 checkingColor: root.amberColor

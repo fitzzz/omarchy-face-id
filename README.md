@@ -4,7 +4,7 @@ Omarchy Face ID is a standalone setup app and local biometric foundation for Oma
 
 The current build includes:
 
-- a Gaze-owned live feed during enrollment;
+- a live enrollment feed using Gaze frames for exclusive cameras and a shared local PipeWire preview when Gaze deliberately omits them;
 - an animated face surrounded by radial scan marks;
 - a five-angle guided enrollment walkthrough;
 - real Gaze enrollment through its system D-Bus service;
@@ -87,7 +87,7 @@ The script downloads a pinned, checksum-verified linuxdeploy release to obtain `
 
 When `com.gundulabs.Gaze` is present on the system bus, the app claims the current user, starts enrollment, receives Gaze's prompts and preview frames, and releases the claim on completion or cancellation. When the service is missing or stops responding, the app reports that enrollment is unavailable and leaves the operating system untouched.
 
-Gaze is the sole camera owner. The Qt app receives Gaze's preview frames and never opens a competing camera pipeline. Face matching, liveness detection, and biometric storage remain Gaze's responsibility.
+Gaze remains the sole owner of face matching, liveness detection, enrollment, and biometric storage. For exclusive V4L2 or infrared configurations, the app renders Gaze's preview frames. For a PipeWire-only RGB configuration, Gaze 0.2.12 deliberately omits those frames because PipeWire can safely share the camera; the app mirrors Gaze's own GUI by opening a display-only Qt preview alongside daemon capture.
 
 ## Project status
 

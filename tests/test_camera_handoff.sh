@@ -5,12 +5,15 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 main_qml="$project_dir/qml/Main.qml"
 
-# Gaze is the only camera owner. The setup app consumes Gaze's preview frames
-# and must never construct a second Qt Multimedia camera pipeline.
-if grep -Eq 'QtMultimedia|VideoOutput|(^|[[:space:]])Camera[[:space:]]*\{' "$main_qml"; then
-    echo "The setup app contains a competing Qt camera pipeline." >&2
-    exit 1
-fi
+# Gaze 0.2.12 intentionally omits daemon preview frames for a shareable
+# PipeWire RGB camera. Mirror its own GUI: open a parallel local preview only
+# when the parsed Gaze configuration says sharing is safe.
+grep -Fq 'import QtMultimedia' "$main_qml"
+grep -Fq 'gazeClient.parallelPreviewAvailable' "$main_qml"
+grep -Fq 'VideoOutput {' "$main_qml"
+grep -Fq '&& gazeClient.parallelPreviewAvailable' "$main_qml"
+grep -Fq 'interval: 1000' "$main_qml"
+grep -Fq 'id: promptTransition' "$main_qml"
 if grep -Fq 'Check your camera' "$main_qml"; then
     echo "The redundant camera-check step still exists." >&2
     exit 1

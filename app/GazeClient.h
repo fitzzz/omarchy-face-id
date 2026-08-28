@@ -16,6 +16,7 @@ class GazeClient final : public QObject
     Q_PROPERTY(bool installed READ installed NOTIFY availabilityChanged)
     Q_PROPERTY(bool serviceAvailable READ serviceAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool cameraAvailable READ cameraAvailable NOTIFY availabilityChanged)
+    Q_PROPERTY(bool parallelPreviewAvailable READ parallelPreviewAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool enrolling READ enrolling NOTIFY enrollingChanged)
     Q_PROPERTY(bool enrollmentComplete READ enrollmentComplete NOTIFY enrollmentChanged)
     Q_PROPERTY(int enrollmentProgress READ enrollmentProgress NOTIFY enrollmentChanged)
@@ -45,6 +46,7 @@ public:
     bool installed() const;
     bool serviceAvailable() const;
     bool cameraAvailable() const;
+    bool parallelPreviewAvailable() const;
     bool enrolling() const;
     bool enrollmentComplete() const;
     int enrollmentProgress() const;
@@ -104,6 +106,7 @@ private:
     bool m_installed = false;
     bool m_serviceAvailable = false;
     bool m_cameraAvailable = false;
+    bool m_parallelPreviewAvailable = false;
     bool m_claimed = false;
     bool m_enrolling = false;
     bool m_enrollmentComplete = false;

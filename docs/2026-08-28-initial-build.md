@@ -35,7 +35,7 @@ This creates two layers:
 
 1. **Welcome:** introduces Face ID and states explicitly that face matching, liveness checks, and biometric data remain local.
 2. **Prepare:** helps the user get ready for the scan and presents one human-readable camera state. Package, daemon, and device details stay out of the primary journey.
-3. **Scan:** requests enrollment authorization and immediately begins the guided capture. A radial face animation fills as Gaze captures straight, up, down, left, and right views, then becomes a checkmark.
+3. **Scan:** requests enrollment authorization and immediately begins the guided capture. A live preview sits behind the radial face guide. Each straight, up, down, left, and right instruction waits one second and cross-fades in place before capture can naturally progress, then the guide becomes a checkmark.
 4. **Done:** offers **Enable Face ID**. This is the only step that requests system authorization for the dedicated lock service and Omarchy plugin. Once enabled, it confirms that Face ID is ready.
 
 The main flow never exposes binary paths, service names, PAM terminology, embeddings, or diagnostic dashboards. When readiness fails, it gives one plain-language recovery action. Technical diagnostics remain available through `gaze doctor` outside the wizard.

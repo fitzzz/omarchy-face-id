@@ -11,6 +11,8 @@
 - Replace the password disclaimer with one clear promise and rename the vague Ready step to Prepare.
 - Add the Heroicons long-arrow to forward wizard actions.
 - Make Back a quiet action and remove duplicate step counters from page headers.
+- Restore live enrollment video for shareable PipeWire cameras, pace pose instructions, and cross-fade them in place.
+- Continue lock-screen activation after a harmless Omarchy rescan timeout and keep plugin terminology out of user-facing errors.
 
 ## 0.3.0 - 2026-08-28
 
