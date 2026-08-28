@@ -22,6 +22,10 @@ Button {
     font.pixelSize: 14
     font.weight: Font.DemiBold
 
+    HoverHandler {
+        cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+    }
+
     contentItem: Text {
         text: control.text
         color: control.enabled ? control.textColor : control.disabledTextColor

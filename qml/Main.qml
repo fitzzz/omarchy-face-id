@@ -234,8 +234,7 @@ ApplicationWindow {
                     Text {
                         anchors.fill: parent
                         text: "Your password always works."
-                        color: root.textColor
-                        opacity: 0.82
+                        color: root.mutedColor
                         font.family: "monospace"
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
@@ -289,21 +288,24 @@ ApplicationWindow {
                             text: "Unlock your computer with a glance. Face matching and liveness checks happen locally; your biometric data never leaves this computer."
                             color: root.mutedColor
                             font.family: "monospace"
-                            font.pixelSize: 15
+                            font.pixelSize: 14
                             lineHeight: 1.45
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
                         }
-                        ThemedActionButton {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Get Started"
-                            primary: true
-                            onClicked: {
-                                gazeClient.refresh()
-                                root.currentStep = 1
+                        Item { Layout.fillHeight: true }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Item { Layout.fillWidth: true }
+                            ThemedActionButton {
+                                text: "Get Started"
+                                primary: true
+                                onClicked: {
+                                    gazeClient.refresh()
+                                    root.currentStep = 1
+                                }
                             }
                         }
-                        Item { Layout.fillHeight: true }
                     }
                 }
 
@@ -368,12 +370,12 @@ ApplicationWindow {
                                 text: "Back"
                                 onClicked: root.currentStep = 0
                             }
+                            Item { Layout.fillWidth: true }
                             ThemedActionButton {
                                 text: "Check Again"
                                 visible: !root.gazeReady
                                 onClicked: gazeClient.refresh()
                             }
-                            Item { Layout.fillWidth: true }
                             ThemedActionButton {
                                 text: "Authorize and Scan Face"
                                 primary: true
@@ -493,15 +495,29 @@ ApplicationWindow {
                             color: root.textColor
                             opacity: 0.78
                             font.family: "monospace"
-                            font.pixelSize: 15
+                            font.pixelSize: 14
                             lineHeight: 1.45
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter
                         }
-                        RowLayout {
+                        Text {
+                            Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
+                            visible: gazeClient.lockIntegrationError.length > 0
+                            text: gazeClient.lockIntegrationError
+                            color: root.errorColor
+                            font.family: "monospace"
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        Item { Layout.fillHeight: true }
+                        RowLayout {
+                            Layout.fillWidth: true
                             spacing: 12
+                            Item { Layout.fillWidth: true }
                             ThemedActionButton {
+                                visible: !gazeClient.lockIntegrationInstalled
                                 text: "Scan Again"
                                 onClicked: {
                                     root.enrollmentStarted = false
@@ -523,18 +539,6 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        Text {
-                            Layout.maximumWidth: 520
-                            Layout.alignment: Qt.AlignHCenter
-                            visible: gazeClient.lockIntegrationError.length > 0
-                            text: gazeClient.lockIntegrationError
-                            color: root.errorColor
-                            font.family: "monospace"
-                            font.pixelSize: 12
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignHCenter
-                        }
-                        Item { Layout.fillHeight: true }
                     }
                 }
             }

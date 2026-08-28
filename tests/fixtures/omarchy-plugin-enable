@@ -2,4 +2,32 @@
 
 set -euo pipefail
 
-[[ ${1:-} == "fitzzz.face-id" ]]
+if [[ ${0##*/} == "pkexec" ]]; then
+    plugin_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy/plugins/fitzzz.face-id"
+    trace="${OMARCHY_FACE_ID_CONFIG_ROOT}/authorization-order.log"
+
+    printf 'authorization-started\n' >> "$trace"
+
+    if [[ -e $plugin_dir ]]; then
+        printf 'plugin-present-too-early\n' >> "$trace"
+        echo "Omarchy plugin was written before authorization completed" >&2
+        exit 86
+    fi
+
+    [[ $# -eq 9 ]]
+    [[ $1 == "/usr/bin/install" ]]
+    [[ $2 == "-o" && $3 == "root" ]]
+    [[ $4 == "-g" && $5 == "root" ]]
+    [[ $6 == "-m" && $7 == "0644" ]]
+
+    # This test fixture runs unprivileged, so emulate pkexec without chown.
+    "$1" -m "$7" "$8" "$9"
+    printf 'authorization-finished\n' >> "$trace"
+else
+    [[ ${1:-} == "fitzzz.face-id" ]]
+
+    config_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy"
+    mkdir -p "$config_dir"
+    printf '%s\n' '{"version":1,"plugins":[{"id":"fitzzz.face-id"}]}' \
+        > "$config_dir/shell.json"
+fi

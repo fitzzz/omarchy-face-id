@@ -10,6 +10,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -40,6 +43,26 @@ bool fileMatches(const QString &path, const QByteArray &expected)
 {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) && file.readAll() == expected;
+}
+
+bool pluginEnabled(const QString &configRoot)
+{
+    QFile config(configRoot + QStringLiteral("/omarchy/shell.json"));
+    if (!config.open(QIODevice::ReadOnly))
+        return false;
+
+    const QJsonDocument document = QJsonDocument::fromJson(config.readAll());
+    if (!document.isObject())
+        return false;
+
+    const QJsonArray plugins = document.object().value(QStringLiteral("plugins")).toArray();
+    for (const QJsonValue &entry : plugins) {
+        if (entry.isObject()
+            && entry.toObject().value(QStringLiteral("id")).toString()
+                == QString::fromLatin1(pluginId))
+            return true;
+    }
+    return false;
 }
 
 QDBusInterface gazeInterface()
@@ -220,13 +243,6 @@ void GazeClient::enableLockIntegration()
         return;
 
     m_lockIntegrationError.clear();
-    QString pluginError;
-    if (!installUserPlugin(&pluginError)) {
-        m_lockIntegrationError = pluginError;
-        emit lockIntegrationChanged();
-        return;
-    }
-
     const QByteArray pamContents = resourceContents(
         QStringLiteral(":/packaging/pam/omarchy-face-id-lock"));
     if (pamContents.isEmpty()) {
@@ -310,7 +326,8 @@ void GazeClient::refreshLockIntegrationStatus()
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/Service.qml")))
         && fileMatches(
             pluginRoot + QStringLiteral("/manifest.json"),
-            resourceContents(QStringLiteral(":/integration/omarchy-plugin/manifest.json")));
+            resourceContents(QStringLiteral(":/integration/omarchy-plugin/manifest.json")))
+        && pluginEnabled(configRoot);
 
     if (installed != m_lockIntegrationInstalled) {
         m_lockIntegrationInstalled = installed;
@@ -385,6 +402,16 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
     if (!authorized) {
         m_lockIntegrationError = QStringLiteral(
             "Face ID was not enabled. Your password was not changed.");
+        emit lockIntegrationChanged();
+        return;
+    }
+
+    // Installing into the watched Omarchy plugin directory reloads every
+    // shell service, including the polkit agent. Do it only after pkexec has
+    // finished so the password conversation cannot be destroyed mid-flight.
+    QString pluginError;
+    if (!installUserPlugin(&pluginError)) {
+        m_lockIntegrationError = pluginError;
         emit lockIntegrationChanged();
         return;
     }
