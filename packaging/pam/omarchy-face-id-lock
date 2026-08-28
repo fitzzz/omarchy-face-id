@@ -1,5 +1,5 @@
 #%PAM-1.0
-# Face-only service for Omarchy Face Unlock. Password authentication remains
+# Face-only service for Omarchy Face ID. Password authentication remains
 # exclusively owned by Omarchy's separate password service.
 auth       [success=done default=ignore]   pam_gaze.so
 auth       required                        pam_deny.so

@@ -1,8 +1,8 @@
 # Historical proposal: Omarchy biometric provider API v1
 
-> This document records the original plugin-based integration proposal. The project now ships a separate Qt setup application. The proposal remains relevant only to a future, upstream-supported lock-screen authentication hook; none of it is installed or enabled by the current AppImage.
+> This document records the proposed upstream contract for Face ID subscribers. The compatibility lock subscriber works today, but this API is still needed for a supported authentication lifecycle and lock-screen visual slot.
 
-This is a proposal for the smallest upstream Omarchy extension needed by `fitzzz.face-unlock`. It is not part of the current Omarchy 4.0.0 plugin schema.
+This is a proposal for the smallest upstream Omarchy extension needed by `fitzzz.face-id`. It is not part of the current Omarchy 4.0.0 plugin schema.
 
 ## Ownership
 
@@ -17,11 +17,11 @@ The enabled plugin manifest requests a `biometric-provider` capability with API 
 ```json
 {
   "schemaVersion": 1,
-  "providerId": "fitzzz.face-unlock",
-  "pluginId": "fitzzz.face-unlock",
+  "providerId": "fitzzz.face-id",
+  "pluginId": "fitzzz.face-id",
   "providerApiVersion": 1,
-  "pamService": "omarchy-lock-face",
-  "preflight": "/usr/libexec/omarchy-face-unlock-preflight",
+  "pamService": "omarchy-face-id-lock",
+  "preflight": "/usr/libexec/omarchy-face-id-preflight",
   "preflightTimeoutMs": 500,
   "attemptTimeoutMs": 5000,
   "statusCapability": "pam-lifecycle-v1"

@@ -19,7 +19,7 @@ for command_name in curl pacman sha256sum sudo systemctl; do
     fi
 done
 
-temporary_dir=$(mktemp -d -t omarchy-face-unlock-gaze.XXXXXX)
+temporary_dir=$(mktemp -d -t omarchy-face-id-gaze.XXXXXX)
 package_path="$temporary_dir/$package_name"
 before_snapshot="$temporary_dir/pam-before"
 after_snapshot="$temporary_dir/pam-after"
@@ -65,4 +65,4 @@ sudo systemctl enable --now gazed.service
 echo
 echo "Gaze ${gaze_version} is installed and gazed.service is running."
 echo "Protected password, sudo, and polkit PAM files were unchanged."
-echo "Run 'gaze doctor' for diagnostics, then use Omarchy Face Unlock to enroll."
+echo "Run 'gaze doctor' for diagnostics, then use Omarchy Face ID to enroll."

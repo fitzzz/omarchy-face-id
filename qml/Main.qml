@@ -13,7 +13,7 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 620
     visible: true
-    title: "Omarchy Face Unlock"
+    title: "Omarchy Face ID"
     color: backgroundColor
 
     readonly property color backgroundColor: gazeClient.themeDarkerBackground
@@ -203,7 +203,7 @@ ApplicationWindow {
                     ColumnLayout {
                         spacing: 1
                         Text {
-                            text: "FACE UNLOCK"
+                            text: "FACE ID"
                             color: root.textColor
                             font.family: "monospace"
                             font.pixelSize: 16
@@ -276,7 +276,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Setup Face Unlock"
+                            text: "Setup Face ID"
                             color: root.textColor
                             font.family: "monospace"
                             font.pixelSize: 34
@@ -477,7 +477,7 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             text: gazeClient.lockIntegrationInstalled
-                                ? "Face Unlock Is Ready" : "Face Scan Complete"
+                                ? "Omarchy Face ID Is Ready" : "Face Scan Complete"
                             color: root.textColor
                             font.family: "monospace"
                             font.pixelSize: 34
@@ -489,7 +489,7 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             text: gazeClient.lockIntegrationInstalled
                                 ? "Lock your computer and look directly at the camera."
-                                : "Authorize one final system change to enable Face Unlock on the lock screen."
+                                : "Authorize one final system change to enable Face ID on the lock screen."
                             color: root.textColor
                             opacity: 0.78
                             font.family: "monospace"
@@ -512,7 +512,7 @@ ApplicationWindow {
                                 text: gazeClient.lockIntegrationInstalling
                                     ? "Authorizing…"
                                     : gazeClient.lockIntegrationInstalled
-                                        ? "Done" : "Enable Face Unlock"
+                                        ? "Done" : "Enable Face ID"
                                 primary: true
                                 enabled: !gazeClient.lockIntegrationInstalling
                                 onClicked: {

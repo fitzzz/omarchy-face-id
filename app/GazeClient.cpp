@@ -25,8 +25,8 @@ namespace {
 constexpr auto serviceName = "com.gundulabs.Gaze";
 constexpr auto objectPath = "/com/gundulabs/Gaze";
 constexpr auto interfaceName = "com.gundulabs.Gaze";
-constexpr auto facePamPath = "/etc/pam.d/omarchy-lock-face";
-constexpr auto pluginId = "fitzzz.face-unlock";
+constexpr auto facePamPath = "/etc/pam.d/omarchy-face-id-lock";
+constexpr auto pluginId = "fitzzz.face-id";
 
 QByteArray resourceContents(const QString &path)
 {
@@ -54,7 +54,7 @@ QDBusInterface gazeInterface()
 GazeClient::GazeClient(QObject *parent)
     : QObject(parent)
 {
-    m_themeRoot = qEnvironmentVariable("OMARCHY_FACE_UNLOCK_THEME_ROOT",
+    m_themeRoot = qEnvironmentVariable("OMARCHY_FACE_ID_THEME_ROOT",
                                        QDir::homePath()
                                            + QStringLiteral("/.local/state/omarchy/current"));
     m_themeReloadTimer.setSingleShot(true);
@@ -228,19 +228,19 @@ void GazeClient::enableLockIntegration()
     }
 
     const QByteArray pamContents = resourceContents(
-        QStringLiteral(":/packaging/pam/omarchy-lock-face"));
+        QStringLiteral(":/packaging/pam/omarchy-face-id-lock"));
     if (pamContents.isEmpty()) {
-        m_lockIntegrationError = QStringLiteral("The face-unlock service file is missing from this build.");
+        m_lockIntegrationError = QStringLiteral("The Face ID service file is missing from this build.");
         emit lockIntegrationChanged();
         return;
     }
 
     const QString configuredPamPath = qEnvironmentVariable(
-        "OMARCHY_FACE_UNLOCK_PAM_PATH", QString::fromLatin1(facePamPath));
+        "OMARCHY_FACE_ID_PAM_PATH", QString::fromLatin1(facePamPath));
     if (QFileInfo::exists(configuredPamPath)) {
         if (!fileMatches(configuredPamPath, pamContents)) {
             m_lockIntegrationError = QStringLiteral(
-                "A different face-unlock service already exists. It was left unchanged.");
+                "A different Face ID service already exists. It was left unchanged.");
             emit lockIntegrationChanged();
             return;
         }
@@ -258,11 +258,11 @@ void GazeClient::enableLockIntegration()
     }
 
     m_lockIntegrationPamFile = new QTemporaryFile(
-        QDir::tempPath() + QStringLiteral("/omarchy-lock-face.XXXXXX"), this);
+        QDir::tempPath() + QStringLiteral("/omarchy-face-id-lock.XXXXXX"), this);
     if (!m_lockIntegrationPamFile->open()
         || m_lockIntegrationPamFile->write(pamContents) != pamContents.size()
         || !m_lockIntegrationPamFile->flush()) {
-        m_lockIntegrationError = QStringLiteral("Could not prepare the face-unlock service.");
+        m_lockIntegrationError = QStringLiteral("Could not prepare the Face ID service.");
         delete m_lockIntegrationPamFile;
         m_lockIntegrationPamFile = nullptr;
         emit lockIntegrationChanged();
@@ -295,16 +295,16 @@ void GazeClient::enableLockIntegration()
 void GazeClient::refreshLockIntegrationStatus()
 {
     const QString configRoot = qEnvironmentVariable(
-        "OMARCHY_FACE_UNLOCK_CONFIG_ROOT",
+        "OMARCHY_FACE_ID_CONFIG_ROOT",
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
     const QString pluginRoot = configRoot
         + QStringLiteral("/omarchy/plugins/") + QString::fromLatin1(pluginId);
     const QString configuredPamPath = qEnvironmentVariable(
-        "OMARCHY_FACE_UNLOCK_PAM_PATH", QString::fromLatin1(facePamPath));
+        "OMARCHY_FACE_ID_PAM_PATH", QString::fromLatin1(facePamPath));
 
     const bool installed = fileMatches(
         configuredPamPath,
-        resourceContents(QStringLiteral(":/packaging/pam/omarchy-lock-face")))
+        resourceContents(QStringLiteral(":/packaging/pam/omarchy-face-id-lock")))
         && fileMatches(
             pluginRoot + QStringLiteral("/Service.qml"),
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/Service.qml")))
@@ -321,17 +321,17 @@ void GazeClient::refreshLockIntegrationStatus()
 bool GazeClient::installUserPlugin(QString *error)
 {
     const QString configRoot = qEnvironmentVariable(
-        "OMARCHY_FACE_UNLOCK_CONFIG_ROOT",
+        "OMARCHY_FACE_ID_CONFIG_ROOT",
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
     const QString pluginRoot = configRoot
         + QStringLiteral("/omarchy/plugins/") + QString::fromLatin1(pluginId);
 
     if (QFileInfo(pluginRoot).isSymLink()) {
-        *error = QStringLiteral("The Face Unlock plugin folder is a symbolic link. It was left unchanged.");
+        *error = QStringLiteral("The Face ID plugin folder is a symbolic link. It was left unchanged.");
         return false;
     }
     if (!QDir().mkpath(pluginRoot)) {
-        *error = QStringLiteral("Could not create the Face Unlock plugin folder.");
+        *error = QStringLiteral("Could not create the Face ID plugin folder.");
         return false;
     }
 
@@ -350,7 +350,7 @@ bool GazeClient::installUserPlugin(QString *error)
         if (!target.open(QIODevice::WriteOnly)
             || target.write(contents) != contents.size()
             || !target.commit()) {
-            *error = QStringLiteral("Could not install the Omarchy Face Unlock plugin.");
+            *error = QStringLiteral("Could not install the Omarchy Face ID plugin.");
             return false;
         }
         QFile::setPermissions(targetPath,
@@ -384,14 +384,20 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
     m_lockIntegrationInstalling = false;
     if (!authorized) {
         m_lockIntegrationError = QStringLiteral(
-            "Face Unlock was not enabled. Your password was not changed.");
+            "Face ID was not enabled. Your password was not changed.");
         emit lockIntegrationChanged();
         return;
     }
 
+    const QString rescanCommand = QStandardPaths::findExecutable(
+        QStringLiteral("omarchy-shell"));
     const QString enableCommand = QStandardPaths::findExecutable(
         QStringLiteral("omarchy-plugin-enable"));
-    if (enableCommand.isEmpty()
+    if (rescanCommand.isEmpty()
+        || QProcess::execute(rescanCommand,
+                             {QStringLiteral("shell"),
+                              QStringLiteral("rescanPlugins")}) != 0
+        || enableCommand.isEmpty()
         || QProcess::execute(enableCommand, {QString::fromLatin1(pluginId)}) != 0) {
         m_lockIntegrationError = QStringLiteral(
             "The files were installed, but the Omarchy plugin could not be enabled.");

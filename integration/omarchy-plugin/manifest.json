@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "fitzzz.face-unlock",
-  "name": "Face Unlock",
-  "version": "0.2.0",
+  "id": "fitzzz.face-id",
+  "name": "Face ID",
+  "version": "0.3.0",
   "author": "fitzzz",
   "description": "Face authentication for Omarchy's existing lock screen with password fallback.",
   "kinds": [

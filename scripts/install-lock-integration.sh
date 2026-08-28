@@ -4,12 +4,12 @@ set -euo pipefail
 
 project_root=$(cd "$(dirname "$0")/.." && pwd)
 plugin_source="$project_root/integration/omarchy-plugin"
-pam_source="$project_root/packaging/pam/omarchy-lock-face"
-plugin_target="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/fitzzz.face-unlock"
-pam_target=/etc/pam.d/omarchy-lock-face
+pam_source="$project_root/packaging/pam/omarchy-face-id-lock"
+plugin_target="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/fitzzz.face-id"
+pam_target=/etc/pam.d/omarchy-face-id-lock
 
 if omarchy-hyprland-session-locked >/dev/null 2>&1; then
-    echo "Unlock the computer before installing face unlock." >&2
+    echo "Unlock the computer before installing Omarchy Face ID." >&2
     exit 1
 fi
 
@@ -29,8 +29,9 @@ install -m 0644 "$plugin_source/manifest.json" "$plugin_target/manifest.json"
 
 sudo install -o root -g root -m 0644 "$pam_source" "$pam_target"
 
-omarchy-plugin-enable fitzzz.face-unlock >/dev/null
+omarchy-shell shell rescanPlugins >/dev/null
+omarchy-plugin-enable fitzzz.face-id >/dev/null
 omarchy-plugin-validate "$plugin_target"
 
-echo "Face unlock is installed. Lock the computer and look at the camera."
+echo "Omarchy Face ID is installed. Lock the computer and look at the camera."
 echo "Your password remains available at all times."

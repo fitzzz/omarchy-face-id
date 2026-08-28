@@ -1,22 +1,24 @@
-# Initial build plan: Omarchy Face Unlock
+# Initial build plan: Omarchy Face ID
 
 Date: 2026-08-28
 Status: Qt application, Gaze enrollment, and update-soft lock authentication implemented
 
 ## Product direction
 
-Build a Qt 6/QML AppImage that gives Omarchy users a friendly, guided way to verify Gaze readiness and enroll their face. Keep the application independent of Omarchy's lock-screen files so ordinary Omarchy updates do not overwrite it or strand the user at a broken lock screen.
+Build Omarchy Face ID as a local biometric foundation with a Qt 6/QML setup app. Enrollment, matching, liveness, and local storage are the reusable center; the lock screen is the first subscriber. Keep every subscriber independent of Omarchy's first-party files so ordinary updates cannot strand the user behind a broken authentication path.
+
+The current scope stops at enrollment and the lock-screen subscriber. Password prompts, privilege elevation, passkeys, and other biometric consumers are future direction only and must each receive a separate threat model, authorization policy, and recovery design before implementation.
 
 The experience uses a friendly face avatar surrounded by 72 radial scan marks. The face glances, blinks, follows the requested pose, and transitions into a checkmark after a successful scan. The motion is based on the clarity of Apple's Face ID setup language while remaining native to Omarchy's theme. The application does not copy or replace the first-party lock screen.
 
 ## What the AppImage can and cannot solve
 
-The AppImage solves distribution of the setup interface, diagnostics, and guided enrollment. It does not make a sandboxed application into a system authenticator. Face unlock still requires a trusted Gaze daemon, its PAM module, and a narrow connection to Omarchy's lock authentication lifecycle.
+The AppImage solves distribution of the setup interface, diagnostics, guided enrollment, and explicit subscriber activation. It does not make a sandboxed application into a system authenticator. Each subscriber still requires a trusted Gaze daemon, its PAM module, and a narrow connection to that subscriber's authentication lifecycle.
 
 This creates two layers:
 
-1. **Portable setup app:** readiness checks, Gaze-owned enrollment feed, status, and recovery guidance.
-2. **System integration:** Gaze runtime, an isolated PAM service, and a compatibility plugin that asks the existing Omarchy lock service to finish unlocking only after current face PAM success. The wizard installs this layer only after enrollment and explicit system authorization.
+1. **Face ID foundation:** readiness checks, Gaze-owned enrollment, local matching, liveness, biometric storage, status, and recovery guidance.
+2. **Lock subscriber:** an isolated PAM service and compatibility plugin that asks the existing Omarchy lock service to finish unlocking only after current face PAM success. The wizard installs this subscriber only after enrollment and explicit system authorization.
 
 ## Non-negotiable safety contract
 
@@ -31,10 +33,10 @@ This creates two layers:
 
 ## Implemented application flow
 
-1. **Welcome:** promises face unlock with a glance and states explicitly that face matching, liveness checks, and biometric data remain local.
+1. **Welcome:** introduces Face ID and states explicitly that face matching, liveness checks, and biometric data remain local.
 2. **Ready:** presents one human-readable camera readiness state. Package, daemon, and device details stay out of the primary journey.
 3. **Scan:** requests enrollment authorization and immediately begins the guided capture. A radial face animation fills as Gaze captures straight, up, down, left, and right views, then becomes a checkmark.
-4. **Done:** offers **Enable Face Unlock**. This is the only step that requests system authorization for the dedicated lock service and Omarchy plugin. Once enabled, it confirms that Face Unlock is ready.
+4. **Done:** offers **Enable Face ID**. This is the only step that requests system authorization for the dedicated lock service and Omarchy plugin. Once enabled, it confirms that Face ID is ready.
 
 The main flow never exposes binary paths, service names, PAM terminology, embeddings, or diagnostic dashboards. When readiness fails, it gives one plain-language recovery action. Technical diagnostics remain available through `gaze doctor` outside the wizard.
 
@@ -55,11 +57,11 @@ Gaze owns face matching, local embeddings, liveness checks, infrared support, mo
 
 The package targets Omarchy x86-64 and uses the Qt 6 runtime already installed by Omarchy. Tests showed that fully bundling Qt and a second distribution's multimedia/system libraries could crash in the dynamic loader before application code started. The thin package avoids those conflicting libraries while keeping the compiled QML and application code in one AppImage.
 
-The build script pins and verifies linuxdeploy, extracts its `appimagetool`, builds and tests the application, installs an AppDir, and creates `dist/Omarchy_Face_Unlock-x86_64.AppImage`.
+The build script pins and verifies linuxdeploy, extracts its `appimagetool`, builds and tests the application, installs an AppDir, and creates `dist/Omarchy_Face_ID-x86_64.AppImage`.
 
 ## Implemented lock integration
 
-- `/etc/pam.d/omarchy-lock-face` contains only `pam_gaze`, `pam_deny`, and `pam_permit`; it never includes a password or shared authentication stack.
+- `/etc/pam.d/omarchy-face-id-lock` contains only `pam_gaze`, `pam_deny`, and `pam_permit`; it never includes a password or shared authentication stack.
 - The user plugin watches the existing `omarchy.lock` service and begins face PAM after a short secure-surface delay.
 - Starting password authentication aborts the face attempt immediately.
 - Generation checks reject stale results from a previous lock or cancelled attempt.

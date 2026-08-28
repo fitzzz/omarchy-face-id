@@ -11,8 +11,8 @@
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("Omarchy Face Unlock"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.2.0"));
+    QCoreApplication::setApplicationName(QStringLiteral("Omarchy Face ID"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.3.0"));
     QCoreApplication::setOrganizationName(QStringLiteral("Omarchy Community"));
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
     bool loaded = false;
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &app,
                      [&loaded](QObject *object, const QUrl &) { loaded = object != nullptr; });
-    engine.loadFromModule(QStringLiteral("FaceUnlock"), QStringLiteral("Main"));
+    engine.loadFromModule(QStringLiteral("FaceId"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty())
         return 1;
 

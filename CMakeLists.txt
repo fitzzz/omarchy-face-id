@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OmarchyFaceUnlock
-    VERSION 0.2.0
-    DESCRIPTION "Guided Gaze enrollment for Omarchy"
+project(OmarchyFaceId
+    VERSION 0.3.0
+    DESCRIPTION "Local biometric foundation for Omarchy"
     LANGUAGES CXX
 )
 
@@ -21,14 +21,14 @@ find_package(Qt6 6.7 REQUIRED COMPONENTS
 qt_standard_project_setup(REQUIRES 6.7)
 qt_policy(SET QTP0004 NEW)
 
-qt_add_executable(omarchy-face-unlock
+qt_add_executable(omarchy-face-id
     app/GazeClient.cpp
     app/GazeClient.h
     app/main.cpp
 )
 
-qt_add_qml_module(omarchy-face-unlock
-    URI FaceUnlock
+qt_add_qml_module(omarchy-face-id
+    URI FaceId
     VERSION 1.0
     QML_FILES
         qml/Main.qml
@@ -39,16 +39,16 @@ qt_add_qml_module(omarchy-face-unlock
         qml/components/StepRail.qml
 )
 
-qt_add_resources(omarchy-face-unlock "face_unlock_integration"
+qt_add_resources(omarchy-face-id "face_id_integration"
     PREFIX "/"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES
         integration/omarchy-plugin/Service.qml
         integration/omarchy-plugin/manifest.json
-        packaging/pam/omarchy-lock-face
+        packaging/pam/omarchy-face-id-lock
 )
 
-target_link_libraries(omarchy-face-unlock PRIVATE
+target_link_libraries(omarchy-face-id PRIVATE
     Qt6::Core
     Qt6::DBus
     Qt6::Gui
@@ -56,19 +56,19 @@ target_link_libraries(omarchy-face-unlock PRIVATE
     Qt6::QuickControls2
 )
 
-install(TARGETS omarchy-face-unlock
+install(TARGETS omarchy-face-id
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
 )
-install(FILES packaging/io.omarchy.FaceUnlock.desktop
+install(FILES packaging/io.omarchy.FaceId.desktop
     DESTINATION share/applications
 )
-install(FILES packaging/io.omarchy.FaceUnlock.svg
+install(FILES packaging/io.omarchy.FaceId.svg
     DESTINATION share/icons/hicolor/scalable/apps
 )
 include(CTest)
 if(BUILD_TESTING)
-    add_test(NAME qml-smoke COMMAND omarchy-face-unlock --smoke-test)
+    add_test(NAME qml-smoke COMMAND omarchy-face-id --smoke-test)
     set_tests_properties(qml-smoke PROPERTIES ENVIRONMENT
         "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
     )
@@ -86,6 +86,6 @@ if(BUILD_TESTING)
     )
     add_test(NAME wizard-activation
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wizard_activation.sh
-            $<TARGET_FILE:omarchy-face-unlock>
+            $<TARGET_FILE:omarchy-face-id>
     )
 endif()

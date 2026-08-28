@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-[[ ${1:-} == "fitzzz.face-unlock" ]]
+[[ ${1:-} == "fitzzz.face-id" ]]

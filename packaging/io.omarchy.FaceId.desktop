@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Omarchy Face ID
+Comment=Set up local biometric authentication for Omarchy
+Exec=omarchy-face-id
+Icon=io.omarchy.FaceId
+Terminal=false
+Categories=Settings;Security;
+Keywords=face;biometric;unlock;camera;gaze;security;
+StartupNotify=true

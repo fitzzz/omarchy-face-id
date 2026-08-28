@@ -16,9 +16,9 @@ if grep -Fq 'Check your camera' "$main_qml"; then
     exit 1
 fi
 
-app_binary=${OMARCHY_FACE_UNLOCK_BINARY:-"$PWD/omarchy-face-unlock"}
+app_binary=${OMARCHY_FACE_ID_BINARY:-"$PWD/omarchy-face-id"}
 if [[ -x "$app_binary" ]]; then
-    temporary_dir=$(mktemp -d -t face-unlock-theme-test.XXXXXX)
+    temporary_dir=$(mktemp -d -t face-id-theme-test.XXXXXX)
     app_pid=""
     cleanup() {
         if [[ -n "$app_pid" ]]; then
@@ -33,7 +33,7 @@ if [[ -x "$app_binary" ]]; then
     printf 'background = "#101010"\nforeground = "#eeeeee"\naccent = "#112233"\n' \
         >"$temporary_dir/theme/colors.toml"
     QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-        OMARCHY_FACE_UNLOCK_THEME_ROOT="$temporary_dir" \
+        OMARCHY_FACE_ID_THEME_ROOT="$temporary_dir" \
         "$app_binary" >"$temporary_dir/app.log" 2>&1 &
     app_pid=$!
 

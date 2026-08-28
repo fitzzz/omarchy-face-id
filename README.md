@@ -1,21 +1,28 @@
-# Omarchy Face Unlock
+# Omarchy Face ID
 
-Omarchy Face Unlock is a Qt 6/QML setup app for enrolling a face with [Gaze](https://github.com/GunduLabs/gaze). It is designed around one rule: face recognition may add a way in, but it must never take the password path away.
+Omarchy Face ID is a local biometric foundation for Omarchy, powered by [Gaze](https://github.com/GunduLabs/gaze). The lock screen is its first subscriber. Face ID may add a way in, but it must never remove an existing password path.
 
 The current build includes:
 
 - a Gaze-owned live feed during enrollment;
-- an animated eye that looks left, center, and right and blinks;
+- an animated face surrounded by radial scan marks;
 - a five-angle guided enrollment walkthrough;
 - real Gaze enrollment through its system D-Bus service;
 - a four-screen Welcome, Ready, Scan, and Done journey; and
+- an update-soft Omarchy lock-screen subscriber; and
 - an Omarchy-targeted AppImage build.
+
+## Platform direction
+
+Enrollment, local matching, liveness checks, and biometric storage form the reusable Face ID foundation. Integrations such as the lock screen remain narrow subscribers with their own authorization policy and failure behavior.
+
+The current release implements only setup, enrollment, and lock-screen authentication. Future password prompts, privilege elevation, passkeys, and other biometric consumers are product direction—not implemented behavior.
 
 ## Current safety boundary
 
 The AppImage handles setup and enrollment. The optional lock integration adds a dedicated face-only PAM service and a small Omarchy service plugin. It does not replace the lock screen, edit Omarchy's password service, or alter the shared system authentication stack.
 
-If a later Omarchy update changes the internal lock-service interface, face unlock fails closed: the face attempt stops and the existing password screen continues to work.
+If a later Omarchy update changes the internal lock-service interface, Face ID fails closed: the face attempt stops and the existing password screen continues to work.
 
 ## Install Gaze safely on Omarchy
 
@@ -30,11 +37,11 @@ The script downloads Gaze 0.2.12 from its official GitHub release, verifies the 
 ## Run the current AppImage
 
 ```bash
-chmod +x dist/Omarchy_Face_Unlock-x86_64.AppImage
-APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_Unlock-x86_64.AppImage
+chmod +x dist/Omarchy_Face_ID-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_ID-x86_64.AppImage
 ```
 
-After saving a face scan, enable it on Omarchy's lock screen:
+After saving a face scan, enable the lock-screen subscriber:
 
 ```bash
 ./scripts/install-lock-integration.sh
@@ -52,7 +59,7 @@ Requirements: CMake 3.24 or newer, Ninja, a C++20 compiler, and Qt 6.7 or newer 
 cmake -S . -B build-native -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-native
 ctest --test-dir build-native --output-on-failure
-./build-native/omarchy-face-unlock
+./build-native/omarchy-face-id
 ```
 
 Build the AppImage with:

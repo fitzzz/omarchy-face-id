@@ -31,7 +31,7 @@ if [[ $(uname -m) != "x86_64" ]]; then
 fi
 
 mkdir -p "$tools_dir" "$output_dir"
-cmake -S "$project_dir" -B "$build_dir" -G Ninja \
+cmake --fresh -S "$project_dir" -B "$build_dir" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DBUILD_TESTING=ON
@@ -47,11 +47,11 @@ download_tool "$linuxdeploy_url" "$tools_dir/$linuxdeploy_name" "$linuxdeploy_sh
 # release Qt and multimedia stack causes loader conflicts and makes updates less
 # reliable, so this AppImage intentionally contains only this application.
 # The executable's compiled QML resources remain inside the binary.
-ln -s usr/bin/omarchy-face-unlock "$app_dir/AppRun"
-ln -s usr/share/applications/io.omarchy.FaceUnlock.desktop \
-    "$app_dir/io.omarchy.FaceUnlock.desktop"
-ln -s usr/share/icons/hicolor/scalable/apps/io.omarchy.FaceUnlock.svg \
-    "$app_dir/io.omarchy.FaceUnlock.svg"
+ln -s usr/bin/omarchy-face-id "$app_dir/AppRun"
+ln -s usr/share/applications/io.omarchy.FaceId.desktop \
+    "$app_dir/io.omarchy.FaceId.desktop"
+ln -s usr/share/icons/hicolor/scalable/apps/io.omarchy.FaceId.svg \
+    "$app_dir/io.omarchy.FaceId.svg"
 
 tool_extract_dir="$tools_dir/linuxdeploy-extracted"
 rm -rf -- "$tool_extract_dir"
@@ -62,7 +62,7 @@ mkdir -p "$tool_extract_dir"
 )
 
 appimagetool="$tool_extract_dir/squashfs-root/plugins/linuxdeploy-plugin-appimage/usr/bin/appimagetool"
-output="$output_dir/Omarchy_Face_Unlock-x86_64.AppImage"
+output="$output_dir/Omarchy_Face_ID-x86_64.AppImage"
 rm -f -- "$output"
 "$appimagetool" "$app_dir" "$output"
 

@@ -4,10 +4,10 @@ set -euo pipefail
 
 project_root=$(cd "$(dirname "$0")/.." && pwd)
 service="$project_root/integration/omarchy-plugin/Service.qml"
-pam="$project_root/packaging/pam/omarchy-lock-face"
+pam="$project_root/packaging/pam/omarchy-face-id-lock"
 installer="$project_root/scripts/install-lock-integration.sh"
 
-grep -Fq 'config: "omarchy-lock-face"' "$service"
+grep -Fq 'config: "omarchy-face-id-lock"' "$service"
 grep -Fq 'result === PamResult.Success' "$service"
 grep -Fq 'lockService.finishUnlock()' "$service"
 grep -Fq 'onAuthenticatingPasswordChanged' "$service"

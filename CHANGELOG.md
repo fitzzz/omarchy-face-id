@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-08-28
+
+- Rename the product, application, package, and repository identity to Omarchy Face ID.
+- Reframe the lock screen as the first subscriber to a reusable local biometric foundation.
+- Rename the lock subscriber, IPC target, environment variables, and dedicated PAM service.
+- Keep password prompts, privilege elevation, passkeys, and other biometric subscribers as documented future direction only.
+
 ## 0.2.0 - 2026-08-28
 
 - Replace the experimental Omarchy plugin shell with a Qt 6/QML setup application.
@@ -10,7 +17,7 @@
 - Add a checksum-pinned Arch installer that suppresses Gaze's PAM-changing package scriptlet and verifies protected PAM files remain unchanged.
 - Redesign setup as a four-screen Welcome, Ready, Scan, and Done journey with plain language and a segmented orbital scan indicator.
 - Remove Qt Multimedia from the app so Gaze is always the sole camera owner.
-- Add a final **Enable Face Unlock** step so system authorization happens only after enrollment.
+- Add a final **Enable Face ID** step so system authorization happens only after enrollment.
 - Add a dedicated face-only PAM service and an update-soft Omarchy lock compatibility plugin while leaving password PAM and first-party lock files unchanged.
 - Replace the orbital eye with an animated face, 72-mark radial scan, and face-to-checkmark completion transition.
 - Use the official Omarchy wordmark geometry in the themed sidebar.

@@ -141,7 +141,7 @@ Item {
 
     PamContext {
         id: facePam
-        config: "omarchy-lock-face"
+        config: "omarchy-face-id-lock"
         user: root.userName
 
         onCompleted: function(result) { root.handleAttemptFinished(result) }
@@ -153,7 +153,7 @@ Item {
     }
 
     FileView {
-        path: "/etc/pam.d/omarchy-lock-face"
+        path: "/etc/pam.d/omarchy-face-id-lock"
         watchChanges: true
         printErrors: false
         onLoaded: {
@@ -192,7 +192,7 @@ Item {
     }
 
     IpcHandler {
-        target: "face-unlock"
+        target: "face-id"
 
         function status(): string {
             return JSON.stringify({
