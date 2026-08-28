@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "DiagnosticLog.h"
+
 #include <QColor>
 #include <QFileSystemWatcher>
 #include <QObject>
@@ -125,6 +127,7 @@ private:
     void abandonProcess(QProcess *&process);
     void finishFaceSetup(bool success, const QString &error = {});
     void playDing();
+    void onParallelPreviewFrame(const QByteArray &jpeg);
     bool startParallelPreview();
     void stopParallelPreview(bool clearFrame = false);
 
@@ -144,6 +147,8 @@ private:
     QString m_enrollmentFaceName = QStringLiteral("default");
     QString m_faceStatus;
     QString m_previewDataUrl;
+    int m_remotePreviewFrames = 0;
+    int m_parallelPreviewFrames = 0;
     QString m_errorMessage;
     bool m_lockIntegrationInstalled = false;
     bool m_lockIntegrationInstalling = false;
@@ -165,6 +170,7 @@ private:
     int m_faceSetupPollCount = 0;
     QString m_faceSetupStatusPath;
     QString m_themeRoot;
+    DiagnosticLog m_diagnostics;
     QColor m_themeBackground = QColor(QStringLiteral("#111c18"));
     QColor m_themeDarkBackground = QColor(QStringLiteral("#0c1512"));
     QColor m_themeDarkerBackground = QColor(QStringLiteral("#090f0d"));

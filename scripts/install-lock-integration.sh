@@ -26,6 +26,8 @@ fi
 install -d -m 0755 "$plugin_target"
 install -m 0644 "$plugin_source/Service.qml" "$plugin_target/Service.qml"
 install -m 0644 "$plugin_source/manifest.json" "$plugin_target/manifest.json"
+install -m 0755 "$plugin_source/log-event.sh" "$plugin_target/log-event.sh"
+install -m 0644 "$project_root/assets/ding.mp3" "$plugin_target/ding.mp3"
 
 sudo install -o root -g root -m 0644 "$pam_source" "$pam_target"
 

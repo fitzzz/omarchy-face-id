@@ -68,6 +68,8 @@ cmp "$project_root/packaging/pam/omarchy-face-id-lock" "$temporary_dir/success/p
 cmp "$project_root/integration/omarchy-plugin/Service.qml" "$plugin_dir/Service.qml"
 cmp "$project_root/integration/omarchy-plugin/manifest.json" "$plugin_dir/manifest.json"
 cmp "$project_root/assets/ding.mp3" "$plugin_dir/ding.mp3"
+cmp "$project_root/integration/omarchy-plugin/log-event.sh" "$plugin_dir/log-event.sh"
+[[ -x $plugin_dir/log-event.sh ]]
 grep -Fq '"id":"fitzzz.face-id"' "$temporary_dir/success/config/omarchy/shell.json"
 [[ $(<"$temporary_dir/success/config/omarchy/enable-attempts") -eq 1 ]]
 [[ $(<"$temporary_dir/success/config/omarchy/rescan-attempts") -eq 1 ]]

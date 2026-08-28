@@ -33,6 +33,10 @@ qt_standard_project_setup(REQUIRES 6.7)
 qt_policy(SET QTP0004 NEW)
 
 qt_add_executable(omarchy-face-id
+    app/CameraInventory.cpp
+    app/CameraInventory.h
+    app/DiagnosticLog.cpp
+    app/DiagnosticLog.h
     app/GazeClient.cpp
     app/GazeClient.h
     app/main.cpp
@@ -56,6 +60,7 @@ qt_add_resources(omarchy-face-id "face_id_integration"
     FILES
         assets/ding.mp3
         integration/omarchy-plugin/Service.qml
+        integration/omarchy-plugin/log-event.sh
         integration/omarchy-plugin/manifest.json
         packaging/pam/omarchy-face-id-lock
         scripts/install-gaze-arch.sh
@@ -110,6 +115,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME camera-handoff
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_handoff.sh
+    )
+    add_test(NAME diagnostics-log
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_diagnostics_log.sh
+            $<TARGET_FILE:omarchy-face-id>
     )
     add_test(NAME lock-integration
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lock_integration.sh

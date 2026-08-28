@@ -2,6 +2,8 @@
 
 #include "GazeClient.h"
 
+#include "CameraInventory.h"
+
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
@@ -114,6 +116,25 @@ bool pluginEnabled(const QString &configRoot)
     return false;
 }
 
+QString installedGazeVersion()
+{
+    QDir database(QStringLiteral("/var/lib/pacman/local"));
+    const QStringList packages = database.entryList(
+        {QStringLiteral("gaze-bin-*"), QStringLiteral("gaze-*")},
+        QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QString &package : packages) {
+        QFile description(database.filePath(package + QStringLiteral("/desc")));
+        if (!description.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        QTextStream stream(&description);
+        while (!stream.atEnd()) {
+            if (stream.readLine() == QStringLiteral("%VERSION%") && !stream.atEnd())
+                return stream.readLine().trimmed();
+        }
+    }
+    return QStringLiteral("unknown");
+}
+
 QDBusInterface gazeInterface()
 {
     return QDBusInterface(QString::fromLatin1(serviceName),
@@ -126,6 +147,12 @@ QDBusInterface gazeInterface()
 GazeClient::GazeClient(QObject *parent)
     : QObject(parent)
 {
+    m_diagnostics.record(
+        QStringLiteral("app.lifecycle"),
+        QStringLiteral("session_started"),
+        DiagnosticLog::Level::Info,
+        {{QStringLiteral("app_version"), QStringLiteral(OMARCHY_FACE_ID_VERSION)},
+         {QStringLiteral("log_schema_version"), 1}});
     m_themeRoot = qEnvironmentVariable("OMARCHY_FACE_ID_THEME_ROOT",
                                        QDir::homePath()
                                            + QStringLiteral("/.local/state/omarchy/current"));
@@ -198,10 +225,17 @@ GazeClient::GazeClient(QObject *parent)
                 this,
                 SLOT(onPreviewFrame(QByteArray)));
     refresh();
+    CameraInventory::recordSnapshot(
+        m_diagnostics,
+        qEnvironmentVariable("OMARCHY_FACE_ID_GAZE_CONFIG",
+                             QStringLiteral("/etc/gaze/config.toml")),
+        QStringLiteral("app_start"));
 }
 
 GazeClient::~GazeClient()
 {
+    m_diagnostics.record(QStringLiteral("app.lifecycle"),
+                         QStringLiteral("session_stopped"));
     if (!m_faceSetupInstalling && !m_faceSetupStatusPath.isEmpty())
         QFile::remove(m_faceSetupStatusPath);
     stopParallelPreview();
@@ -267,14 +301,28 @@ void GazeClient::refresh()
 
     if (wasInstalled != m_installed || wasAvailable != m_serviceAvailable
         || wasCameraAvailable != m_cameraAvailable
-        || wasParallelPreviewAvailable != m_parallelPreviewAvailable)
+        || wasParallelPreviewAvailable != m_parallelPreviewAvailable) {
+        m_diagnostics.record(
+            QStringLiteral("app.environment"),
+            QStringLiteral("gaze_snapshot_changed"),
+            DiagnosticLog::Level::Info,
+            {{QStringLiteral("installed"), m_installed},
+             {QStringLiteral("package_version"), installedGazeVersion()},
+             {QStringLiteral("service_available"), m_serviceAvailable},
+             {QStringLiteral("camera_available"), m_cameraAvailable},
+             {QStringLiteral("parallel_preview_eligible"),
+              m_parallelPreviewAvailable}});
         emit availabilityChanged();
+    }
 }
 
 void GazeClient::installFaceSetup()
 {
     if (m_faceSetupInstalling)
         return;
+
+    m_diagnostics.record(QStringLiteral("dependency.gaze"),
+                         QStringLiteral("setup_requested"));
 
     refresh();
     if (m_installed && m_serviceAvailable) {
@@ -349,6 +397,13 @@ void GazeClient::installFaceSetup()
 
 void GazeClient::finishFaceSetup(bool success, const QString &error)
 {
+    m_diagnostics.record(
+        QStringLiteral("dependency.gaze"),
+        QStringLiteral("setup_finished"),
+        success ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+        {{QStringLiteral("success"), success},
+         {QStringLiteral("failure_class"),
+          success ? QStringLiteral("none") : QStringLiteral("installer")}});
     m_faceSetupPollTimer.stop();
     if (!m_faceSetupStatusPath.isEmpty())
         QFile::remove(m_faceSetupStatusPath);
@@ -358,6 +413,13 @@ void GazeClient::finishFaceSetup(bool success, const QString &error)
     m_faceSetupError = success ? QString() : error;
     if (success)
         refresh();
+    if (success) {
+        CameraInventory::recordSnapshot(
+            m_diagnostics,
+            qEnvironmentVariable("OMARCHY_FACE_ID_GAZE_CONFIG",
+                                 QStringLiteral("/etc/gaze/config.toml")),
+            QStringLiteral("dependency_ready"));
+    }
     emit faceSetupChanged();
 }
 
@@ -365,8 +427,20 @@ void GazeClient::beginEnrollment(const QString &faceName)
 {
     if (m_enrolling)
         return;
+    m_diagnostics.record(QStringLiteral("enrollment.workflow"),
+                         QStringLiteral("start_requested"));
+    CameraInventory::recordSnapshot(
+        m_diagnostics,
+        qEnvironmentVariable("OMARCHY_FACE_ID_GAZE_CONFIG",
+                             QStringLiteral("/etc/gaze/config.toml")),
+        QStringLiteral("enrollment_start"));
     refresh();
     if (!m_serviceAvailable) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.workflow"),
+            QStringLiteral("start_rejected"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("reason"), QStringLiteral("service_unavailable")}});
         setError(QStringLiteral("The Gaze system service is not available."));
         return;
     }
@@ -379,6 +453,11 @@ void GazeClient::beginEnrollment(const QString &faceName)
         ? QString::fromLocal8Bit(account->pw_name)
         : QString();
     if (username.isEmpty()) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.workflow"),
+            QStringLiteral("start_rejected"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("reason"), QStringLiteral("account_unavailable")}});
         setError(QStringLiteral("Could not determine the current user."));
         return;
     }
@@ -386,9 +465,20 @@ void GazeClient::beginEnrollment(const QString &faceName)
     auto iface = gazeInterface();
     QDBusReply<void> claimReply = iface.call(QStringLiteral("Claim"), username);
     if (!claimReply.isValid()) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.gaze_dbus"),
+            QStringLiteral("claim_finished"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("success"), false},
+             {QStringLiteral("error_id"), claimReply.error().name()}});
         setError(claimReply.error().message());
         return;
     }
+    m_diagnostics.record(
+        QStringLiteral("enrollment.gaze_dbus"),
+        QStringLiteral("claim_finished"),
+        DiagnosticLog::Level::Info,
+        {{QStringLiteral("success"), true}});
     m_claimed = true;
 
     m_enrollmentProgress = 0;
@@ -397,6 +487,8 @@ void GazeClient::beginEnrollment(const QString &faceName)
     m_enrollmentPrompt = QStringLiteral("Starting enrollment…");
     m_faceStatus.clear();
     m_previewDataUrl.clear();
+    m_remotePreviewFrames = 0;
+    m_parallelPreviewFrames = 0;
     m_enrolling = true;
     m_enrollmentFaceName = resolvedName;
     emit enrollingChanged();
@@ -407,6 +499,8 @@ void GazeClient::beginEnrollment(const QString &faceName)
     iface.setTimeout(120000);
     auto *watcher = new QDBusPendingCallWatcher(
         iface.asyncCall(QStringLiteral("EnrollStart"), resolvedName), this);
+    m_diagnostics.record(QStringLiteral("enrollment.gaze_dbus"),
+                         QStringLiteral("enroll_start_sent"));
     connect(watcher, &QDBusPendingCallWatcher::finished, this,
             [this, watcher, enrollmentGeneration] {
                 const QDBusPendingReply<void> enrollReply = *watcher;
@@ -421,6 +515,12 @@ void GazeClient::beginEnrollment(const QString &faceName)
                 }
 
                 if (!enrollReply.isValid()) {
+                    m_diagnostics.record(
+                        QStringLiteral("enrollment.gaze_dbus"),
+                        QStringLiteral("enroll_start_finished"),
+                        DiagnosticLog::Level::Error,
+                        {{QStringLiteral("success"), false},
+                         {QStringLiteral("error_id"), enrollReply.error().name()}});
                     m_enrolling = false;
                     emit enrollingChanged();
                     stopParallelPreview();
@@ -429,6 +529,11 @@ void GazeClient::beginEnrollment(const QString &faceName)
                     return;
                 }
 
+                m_diagnostics.record(
+                    QStringLiteral("enrollment.gaze_dbus"),
+                    QStringLiteral("enroll_start_finished"),
+                    DiagnosticLog::Level::Info,
+                    {{QStringLiteral("success"), true}});
                 setError({});
                 // Enrollment owns the camera. Give Gaze time to establish its
                 // capture stream before attaching the optional shared preview;
@@ -445,6 +550,8 @@ void GazeClient::beginEnrollment(const QString &faceName)
 
 void GazeClient::cancelEnrollment()
 {
+    m_diagnostics.record(QStringLiteral("enrollment.workflow"),
+                         QStringLiteral("cancel_requested"));
     ++m_enrollmentGeneration;
     if (m_serviceAvailable) {
         auto iface = gazeInterface();
@@ -462,6 +569,9 @@ void GazeClient::enableLockIntegration()
 {
     if (m_lockIntegrationInstalling)
         return;
+
+    m_diagnostics.record(QStringLiteral("lock.activation"),
+                         QStringLiteral("start_requested"));
 
     m_lockIntegrationError.clear();
     m_lockPluginDiscoveryPasses = 0;
@@ -592,6 +702,9 @@ bool GazeClient::lockIntegrationStateMatches() const
         && fileMatches(
             pluginRoot + QStringLiteral("/ding.mp3"),
             resourceContents(QStringLiteral(":/assets/ding.mp3")))
+        && fileMatches(
+            pluginRoot + QStringLiteral("/log-event.sh"),
+            resourceContents(QStringLiteral(":/integration/omarchy-plugin/log-event.sh")))
         && pluginEnabled(configRoot);
 }
 
@@ -630,7 +743,8 @@ bool GazeClient::installUserPlugin(QString *error)
     }
 
     const auto writeResource = [error](const QString &resourcePath,
-                                       const QString &targetPath) {
+                                       const QString &targetPath,
+                                       QFileDevice::Permissions permissions) {
         const QByteArray contents = resourceContents(resourcePath);
         if (contents.isEmpty()) {
             *error = QStringLiteral("This build is missing an integration file.");
@@ -647,21 +761,30 @@ bool GazeClient::installUserPlugin(QString *error)
             *error = QStringLiteral("Could not install the Omarchy Face ID plugin.");
             return false;
         }
-        QFile::setPermissions(targetPath,
-                              QFileDevice::ReadOwner | QFileDevice::WriteOwner
-                                  | QFileDevice::ReadGroup | QFileDevice::ReadOther);
+        if (!QFile::setPermissions(targetPath, permissions)) {
+            *error = QStringLiteral("Could not secure an Omarchy Face ID integration file.");
+            return false;
+        }
         return true;
     };
 
+    const auto readable = QFileDevice::ReadOwner | QFileDevice::WriteOwner
+        | QFileDevice::ReadGroup | QFileDevice::ReadOther;
+    const auto executable = readable | QFileDevice::ExeOwner
+        | QFileDevice::ExeGroup | QFileDevice::ExeOther;
+
     return writeResource(
                QStringLiteral(":/integration/omarchy-plugin/Service.qml"),
-               pluginRoot + QStringLiteral("/Service.qml"))
+               pluginRoot + QStringLiteral("/Service.qml"), readable)
         && writeResource(
             QStringLiteral(":/integration/omarchy-plugin/manifest.json"),
-            pluginRoot + QStringLiteral("/manifest.json"))
+            pluginRoot + QStringLiteral("/manifest.json"), readable)
         && writeResource(
             QStringLiteral(":/assets/ding.mp3"),
-            pluginRoot + QStringLiteral("/ding.mp3"));
+            pluginRoot + QStringLiteral("/ding.mp3"), readable)
+        && writeResource(
+            QStringLiteral(":/integration/omarchy-plugin/log-event.sh"),
+            pluginRoot + QStringLiteral("/log-event.sh"), executable);
 }
 
 void GazeClient::continueLockIntegrationInstall()
@@ -680,10 +803,20 @@ void GazeClient::continueLockIntegrationInstall()
     const QString configuredPamPath = qEnvironmentVariable(
         "OMARCHY_FACE_ID_PAM_PATH", QString::fromLatin1(facePamPath));
     if (!fileMatches(configuredPamPath, pamContents)) {
+        m_diagnostics.record(
+            QStringLiteral("lock.activation"),
+            QStringLiteral("pam_verification_finished"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("success"), false}});
         finishLockActivation(false,
                              QStringLiteral("Face ID wasn’t enabled. Nothing changed."));
         return;
     }
+    m_diagnostics.record(
+        QStringLiteral("lock.activation"),
+        QStringLiteral("pam_verification_finished"),
+        DiagnosticLog::Level::Info,
+        {{QStringLiteral("success"), true}});
 
     // Installing into the watched Omarchy plugin directory reloads every
     // shell service, including the polkit agent. Do it only after pkexec has
@@ -716,6 +849,11 @@ void GazeClient::startLockPluginRescan()
 
     m_lockActivationPhase = LockActivationPhase::Rescanning;
     ++m_lockPluginDiscoveryPasses;
+    m_diagnostics.record(
+        QStringLiteral("lock.activation"),
+        QStringLiteral("plugin_rescan_started"),
+        DiagnosticLog::Level::Debug,
+        {{QStringLiteral("pass"), m_lockPluginDiscoveryPasses}});
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_lockPluginEnableProcess = process;
@@ -751,6 +889,11 @@ void GazeClient::startLockPluginEnable()
         return;
 
     m_lockActivationPhase = LockActivationPhase::Enabling;
+    m_diagnostics.record(
+        QStringLiteral("lock.activation"),
+        QStringLiteral("plugin_enable_started"),
+        DiagnosticLog::Level::Debug,
+        {{QStringLiteral("pass"), m_lockPluginDiscoveryPasses}});
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_lockPluginEnableProcess = process;
@@ -823,6 +966,13 @@ void GazeClient::finishLockActivation(bool success, const QString &error)
     refreshLockIntegrationStatus();
     m_lockIntegrationError = success && m_lockIntegrationInstalled
         ? QString() : error;
+    m_diagnostics.record(
+        QStringLiteral("lock.activation"),
+        QStringLiteral("finished"),
+        success && m_lockIntegrationInstalled
+            ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+        {{QStringLiteral("success"), success && m_lockIntegrationInstalled},
+         {QStringLiteral("installed"), m_lockIntegrationInstalled}});
     emit lockIntegrationChanged();
 }
 
@@ -833,6 +983,16 @@ void GazeClient::onEnrollStatus(const QString &,
                                 const QString &prompt,
                                 double timeRemaining)
 {
+    m_diagnostics.record(
+        QStringLiteral("enrollment.workflow"),
+        QStringLiteral("status_changed"),
+        done && prompt != QStringLiteral("completed")
+            ? DiagnosticLog::Level::Error : DiagnosticLog::Level::Info,
+        {{QStringLiteral("step"), static_cast<qint64>(progress)},
+         {QStringLiteral("steps"), static_cast<qint64>(maximum)},
+         {QStringLiteral("done"), done},
+         {QStringLiteral("prompt"), prompt},
+         {QStringLiteral("seconds_remaining"), timeRemaining}});
     const bool wasComplete = m_enrollmentComplete;
     m_enrollmentProgress = static_cast<int>(progress);
     m_enrollmentMaximum = static_cast<int>(maximum);
@@ -891,12 +1051,42 @@ void GazeClient::playDing()
 
 void GazeClient::onFaceStatus(const QString &status)
 {
+    m_diagnostics.record(
+        QStringLiteral("enrollment.camera"),
+        QStringLiteral("face_status_changed"),
+        DiagnosticLog::Level::Debug,
+        {{QStringLiteral("status"), status}});
     m_faceStatus = status;
     emit enrollmentChanged();
 }
 
 void GazeClient::onPreviewFrame(const QByteArray &jpeg)
 {
+    ++m_remotePreviewFrames;
+    if (m_remotePreviewFrames == 1) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.preview"),
+            QStringLiteral("first_sample_received"),
+            DiagnosticLog::Level::Info,
+            {{QStringLiteral("source"), QStringLiteral("gaze_dbus")},
+             {QStringLiteral("bytes"), static_cast<qint64>(jpeg.size())}});
+    }
+    m_previewDataUrl = QStringLiteral("data:image/jpeg;base64,")
+        + QString::fromLatin1(jpeg.toBase64());
+    emit previewChanged();
+}
+
+void GazeClient::onParallelPreviewFrame(const QByteArray &jpeg)
+{
+    ++m_parallelPreviewFrames;
+    if (m_parallelPreviewFrames == 1) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.preview"),
+            QStringLiteral("first_sample_received"),
+            DiagnosticLog::Level::Info,
+            {{QStringLiteral("source"), QStringLiteral("pipewire_shared")},
+             {QStringLiteral("bytes"), static_cast<qint64>(jpeg.size())}});
+    }
     m_previewDataUrl = QStringLiteral("data:image/jpeg;base64,")
         + QString::fromLatin1(jpeg.toBase64());
     emit previewChanged();
@@ -904,6 +1094,8 @@ void GazeClient::onPreviewFrame(const QByteArray &jpeg)
 
 bool GazeClient::startParallelPreview()
 {
+    m_diagnostics.record(QStringLiteral("enrollment.preview"),
+                         QStringLiteral("shared_start_requested"));
     stopParallelPreview(true);
     m_lastPreviewFrameUsec.store(0, std::memory_order_relaxed);
 
@@ -919,6 +1111,10 @@ bool GazeClient::startParallelPreview()
         "appsink name=preview-sink max-buffers=1 drop=true sync=false",
         &error);
     if (!m_parallelPreviewPipeline) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.preview"),
+            QStringLiteral("shared_pipeline_create_failed"),
+            DiagnosticLog::Level::Error);
         qWarning("Could not create shared PipeWire preview: %s",
                  error ? error->message : "unknown GStreamer error");
         g_clear_error(&error);
@@ -928,6 +1124,10 @@ bool GazeClient::startParallelPreview()
     GstElement *sinkElement = gst_bin_get_by_name(
         GST_BIN(m_parallelPreviewPipeline), "preview-sink");
     if (!sinkElement) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.preview"),
+            QStringLiteral("shared_sink_missing"),
+            DiagnosticLog::Level::Error);
         qWarning("Shared PipeWire preview has no frame sink");
         stopParallelPreview();
         return false;
@@ -964,7 +1164,7 @@ bool GazeClient::startParallelPreview()
                 client,
                 [client, jpeg = std::move(jpeg)] {
                     if (client->m_parallelPreviewPipeline)
-                        client->onPreviewFrame(jpeg);
+                        client->onParallelPreviewFrame(jpeg);
                 },
                 Qt::QueuedConnection);
         }
@@ -973,18 +1173,34 @@ bool GazeClient::startParallelPreview()
     gst_app_sink_set_callbacks(GST_APP_SINK(sinkElement), &callbacks, this, nullptr);
     gst_object_unref(sinkElement);
 
-    if (gst_element_set_state(m_parallelPreviewPipeline, GST_STATE_PLAYING)
-        == GST_STATE_CHANGE_FAILURE) {
+    const GstStateChangeReturn stateChange = gst_element_set_state(
+        m_parallelPreviewPipeline, GST_STATE_PLAYING);
+    if (stateChange == GST_STATE_CHANGE_FAILURE) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.preview"),
+            QStringLiteral("shared_start_failed"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("state_result"), static_cast<int>(stateChange)}});
         qWarning("Could not start shared PipeWire preview");
         stopParallelPreview();
         return false;
     }
+    m_diagnostics.record(
+        QStringLiteral("enrollment.preview"),
+        QStringLiteral("shared_start_finished"),
+        DiagnosticLog::Level::Info,
+        {{QStringLiteral("state_result"), static_cast<int>(stateChange)}});
     return true;
 }
 
 void GazeClient::stopParallelPreview(bool clearFrame)
 {
     if (m_parallelPreviewPipeline) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.preview"),
+            QStringLiteral("shared_stopped"),
+            DiagnosticLog::Level::Debug,
+            {{QStringLiteral("samples"), m_parallelPreviewFrames}});
         gst_element_set_state(m_parallelPreviewPipeline, GST_STATE_NULL);
         gst_object_unref(m_parallelPreviewPipeline);
         m_parallelPreviewPipeline = nullptr;

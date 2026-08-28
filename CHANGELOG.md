@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.4 - 2026-08-28
+
+- Add a versioned JSON Lines diagnostic event log with bounded rotation, owner-only permissions, stable subsystem namespaces, per-producer session IDs, severity, sequence numbers, and typed attributes.
+- Enforce a central privacy scrubber that excludes account details, paths, device names, raw errors, authorization contents, images, embeddings, and biometric data.
+- Trace Gaze setup, D-Bus enrollment, camera and face states, preview negotiation, lock integration activation, and terminal outcomes.
+- Trace installed lock-screen authentication attempts, results, retries, password fallback, and successful unlock handoff in the same diagnostic stream.
+- Record privacy-safe camera inventory and format capabilities during setup, then refresh camera count, transport, USB vendor/product IDs, and Gaze selection mode during lock usage without serial numbers or device paths.
+- Document the event envelope, namespace policy, retention, privacy boundary, and default log location.
+
 ## 0.6.3 - 2026-08-28
 
 - Let Gaze establish enrollment capture before attaching the optional local preview, preventing the preview from taking the camera and aborting scans on fresh laptop installations.

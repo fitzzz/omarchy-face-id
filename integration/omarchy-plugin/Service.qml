@@ -24,6 +24,7 @@ Item {
     property int verifyingWordIndex: -1
     property string verifyingWord: "EXTRAPOLATING"
     property real verifyingWordOpacity: 0.9
+    property string diagnosticSessionId: createDiagnosticSessionId()
 
     readonly property var verifyingWords: [
         "EXTRAPOLATING",
@@ -62,6 +63,8 @@ Item {
     readonly property string userName: Quickshell.env("USER") || Quickshell.env("LOGNAME")
     readonly property string dingPath: decodeURIComponent(
         Qt.resolvedUrl("ding.mp3").toString().replace("file://", ""))
+    readonly property string diagnosticLoggerPath: decodeURIComponent(
+        Qt.resolvedUrl("log-event.sh").toString().replace("file://", ""))
     readonly property bool compatible: lockService
         && typeof lockService.finishUnlock === "function"
         && lockService.locked !== undefined
@@ -92,6 +95,32 @@ Item {
         if (!dingProcess.running) dingProcess.running = true
     }
 
+    function randomHex(length) {
+        var value = ""
+        for (var index = 0; index < length; index++)
+            value += Math.floor(Math.random() * 16).toString(16)
+        return value
+    }
+
+    function createDiagnosticSessionId() {
+        return randomHex(8) + "-" + randomHex(4) + "-" + randomHex(4)
+            + "-" + randomHex(4) + "-" + randomHex(12)
+    }
+
+    function logDiagnostic(event, level, attributes) {
+        var args = [diagnosticLoggerPath, event, level || "info", diagnosticSessionId]
+        var values = attributes || {}
+        for (var key in values) args.push(key + "=" + String(values[key]))
+        Quickshell.execDetached(args)
+    }
+
+    function pamResultName(result) {
+        if (result === PamResult.Success) return "success"
+        if (result === PamResult.Failed) return "failed"
+        if (result === PamResult.MaxTries) return "max_tries"
+        return "other"
+    }
+
     onOverlayStateChanged: {
         verifyingWordTransition.stop()
         verifyingWordOpacity = 0.9
@@ -100,6 +129,12 @@ Item {
 
     function beginLockGeneration() {
         lockGeneration += 1
+        logDiagnostic("lock_started", "info", {
+            generation: lockGeneration,
+            compatible: compatible,
+            pam_configured: pamConfigured,
+            grace_ms: 3000
+        })
         retryTimer.stop()
         startTimer.stop()
         successUnlockTimer.stop()
@@ -119,6 +154,10 @@ Item {
     }
 
     function endLockGeneration() {
+        logDiagnostic("lock_ended", "info", {
+            generation: lockGeneration,
+            final_status: status
+        })
         lockGeneration += 1
         retryTimer.stop()
         startTimer.stop()
@@ -140,8 +179,14 @@ Item {
         attemptGeneration = lockGeneration
         authenticating = true
         status = "checking"
+        logDiagnostic("attempt_started", "info", {
+            generation: attemptGeneration
+        })
 
         if (!facePam.start()) {
+            logDiagnostic("attempt_start_failed", "error", {
+                generation: attemptGeneration
+            })
             authenticating = false
             attemptGeneration = -1
             scheduleRetry()
@@ -152,6 +197,11 @@ Item {
         if (!lockService || !compatible || !pamConfigured || !lockService.locked) return
         if (lockService.authenticatingPassword) return
         status = nextStatus || "waiting"
+        logDiagnostic("retry_scheduled", "warning", {
+            generation: lockGeneration,
+            next_status: status,
+            delay_ms: 2500
+        })
         retryTimer.restart()
     }
 
@@ -162,6 +212,11 @@ Item {
 
         if (completedGeneration !== lockGeneration) return
         if (!lockService || !compatible || !lockService.locked) return
+
+        logDiagnostic("attempt_finished", result === PamResult.Success ? "info" : "warning", {
+            generation: completedGeneration,
+            result: pamResultName(result)
+        })
 
         if (result === PamResult.Success) {
             status = "success"
@@ -190,6 +245,7 @@ Item {
     }
 
     Component.onCompleted: {
+        logDiagnostic("subscriber_started", "info", {})
         resolveTimer.start()
         ensureLayerRule()
     }
@@ -221,6 +277,9 @@ Item {
             if (!root.lockService || !root.lockService.locked) return
 
             if (root.lockService.authenticatingPassword) {
+                root.logDiagnostic("password_fallback_started", "info", {
+                    generation: root.lockGeneration
+                })
                 startTimer.stop()
                 retryTimer.stop()
                 successUnlockTimer.stop()
@@ -239,6 +298,9 @@ Item {
 
         onCompleted: function(result) { root.handleAttemptFinished(result) }
         onError: function(error) {
+            root.logDiagnostic("attempt_error", "error", {
+                generation: root.attemptGeneration
+            })
             root.authenticating = false
             root.attemptGeneration = -1
             root.scheduleRetry()
@@ -306,6 +368,9 @@ Item {
             if (expectedGeneration !== root.lockGeneration) return
             if (!root.lockService || !root.compatible || !root.lockService.locked) return
             if (root.lockService.authenticatingPassword || root.status !== "success") return
+            root.logDiagnostic("unlock_handoff_requested", "info", {
+                generation: expectedGeneration
+            })
             root.lockService.finishUnlock()
         }
     }
