@@ -573,7 +573,7 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             text: gazeClient.lockIntegrationInstalled
                                 ? "Try locking your computer. Face ID will appear after 3 seconds."
-                                : "Enter your password once to add Face ID to the lock screen."
+                                : "Approve the system prompt to add Face ID to the lock screen."
                             color: root.textColor
                             opacity: 0.78
                             font.family: "monospace"

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.4 - 2026-08-28
+
+- Describe final activation as system approval instead of promising a password flow, because a pre-existing Gaze installation may authorize Polkit with the enrolled face.
+
 ## 0.5.3 - 2026-08-28
 
 - Render the enrollment ring and scan panel border with the active Omarchy theme accent instead of the warning color.
