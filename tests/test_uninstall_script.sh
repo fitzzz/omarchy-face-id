@@ -10,6 +10,7 @@ grep -Fq 'gaze remove-face "$face_name" --user "$account_name"' "$script"
 grep -Fq 'omarchy plugin remove "$plugin_id" --yes' "$script"
 grep -Fq '[[ $(<"$gaze_receipt") == "$expected_gaze_receipt" ]]' "$script"
 grep -Fq 'sudo pacman -Rns --noconfirm gaze' "$script"
+grep -Fq 'Your password will not change.' "$script"
 
 owned_line=$(grep -n 'if ((gaze_owned)); then' "$script" | tail -1 | cut -d: -f1)
 package_line=$(grep -n 'sudo pacman -Rns --noconfirm gaze' "$script" | cut -d: -f1)

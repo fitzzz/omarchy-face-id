@@ -8,7 +8,7 @@ The current build includes:
 - an animated face surrounded by radial scan marks;
 - a five-angle guided enrollment walkthrough;
 - real Gaze enrollment through its system D-Bus service;
-- a four-screen Welcome, Ready, Scan, and Done journey; and
+- a four-screen Welcome, Prepare, Scan, and Done journey; and
 - an update-soft Omarchy lock-screen subscriber;
 - a click-through lock-screen face, scan-ring, and checkmark overlay; and
 - an Omarchy-targeted AppImage build.

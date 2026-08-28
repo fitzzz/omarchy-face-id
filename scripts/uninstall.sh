@@ -84,7 +84,8 @@ if ((assume_yes == 0)); then
         echo "Run interactively or pass --yes." >&2
         exit 1
     fi
-    echo "This removes Omarchy Face ID and its saved face scan."
+    echo "Face ID and its saved face scan will be removed."
+    echo "Your password will not change."
     if ((gaze_owned)); then
         echo "Gaze will also be removed because Omarchy Face ID installed it."
     else
@@ -130,7 +131,7 @@ if [[ -f $face_receipt ]]; then
 fi
 rmdir "$state_dir" 2>/dev/null || true
 
-echo "Omarchy Face ID was removed. Your password was not changed."
+echo "Face ID was removed. Your password is unchanged."
 if ((gaze_owned == 0)); then
     echo "Gaze was already present before Face ID setup, so it was kept."
 fi

@@ -8,6 +8,7 @@
 - Wait five seconds before face authentication, keep displays awake while it runs, and restore them after unlock.
 - Move the lock-screen Face ID indicator slightly higher.
 - Forward terminal input through the AppImage so interactive uninstall confirmation works.
+- Replace the password disclaimer with one clear promise and rename the vague Ready step to Prepare.
 
 ## 0.3.0 - 2026-08-28
 

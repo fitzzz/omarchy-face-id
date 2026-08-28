@@ -432,7 +432,7 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
     m_lockIntegrationInstalling = false;
     if (!authorized) {
         m_lockIntegrationError = QStringLiteral(
-            "Face ID was not enabled. Your password was not changed.");
+            "Face ID wasn’t enabled. Nothing changed.");
         emit lockIntegrationChanged();
         return;
     }

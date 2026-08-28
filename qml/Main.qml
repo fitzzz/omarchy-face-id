@@ -27,7 +27,7 @@ ApplicationWindow {
     readonly property color amberColor: gazeClient.themeOrange
     readonly property color successColor: gazeClient.themeGreen
     readonly property color errorColor: gazeClient.themeRed
-    readonly property var stepNames: ["Welcome", "Ready", "Scan", "Done"]
+    readonly property var stepNames: ["Welcome", "Prepare", "Scan", "Done"]
 
     property int currentStep: Qt.application.arguments.indexOf("--done-page-test") >= 0 ? 3
         : Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
@@ -229,14 +229,16 @@ ApplicationWindow {
 
                 Item {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 48
+                    Layout.preferredHeight: 64
 
                     Text {
                         anchors.fill: parent
-                        text: "Your password always works."
-                        color: root.mutedColor
+                        text: "Face ID adds a faster way to unlock.\nYour password stays exactly as it is."
+                        color: root.textColor
+                        opacity: 0.72
                         font.family: "monospace"
-                        font.pixelSize: 12
+                        font.pixelSize: 13
+                        lineHeight: 1.45
                         wrapMode: Text.WordWrap
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -317,7 +319,7 @@ ApplicationWindow {
                         PageTitle {
                             Layout.fillWidth: true
                             eyebrow: "STEP 2 OF 4"
-                            title: "Ready when you are"
+                            title: "Get ready for your scan"
                             description: "Keep your face uncovered and look directly at the camera."
                         }
 
@@ -479,7 +481,7 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             text: gazeClient.lockIntegrationInstalled
-                                ? "Omarchy Face ID Is Ready" : "Face Scan Complete"
+                                ? "Face ID is ready." : "Face scan complete."
                             color: root.textColor
                             font.family: "monospace"
                             font.pixelSize: 34
@@ -490,8 +492,8 @@ ApplicationWindow {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
                             text: gazeClient.lockIntegrationInstalled
-                                ? "Lock your computer and look directly at the camera."
-                                : "Authorize one final system change to enable Face ID on the lock screen."
+                                ? "Lock your computer. After five seconds, look at the camera."
+                                : "Enter your password once to add Face ID to the lock screen."
                             color: root.textColor
                             opacity: 0.78
                             font.family: "monospace"
