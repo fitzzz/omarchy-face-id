@@ -2,6 +2,7 @@
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Shapes
 
 Button {
     id: control
@@ -13,6 +14,7 @@ Button {
     property color hoverColor: "#24322d"
     property color borderColor: "#476258"
     property color disabledTextColor: "#66706b"
+    property bool forwardIcon: false
 
     implicitWidth: Math.max(132, contentItem.implicitWidth + 40)
     implicitHeight: 44
@@ -26,12 +28,53 @@ Button {
         cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
     }
 
-    contentItem: Text {
-        text: control.text
-        color: control.enabled ? control.textColor : control.disabledTextColor
-        font: control.font
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
+    contentItem: Item {
+        implicitWidth: contentRow.implicitWidth
+        implicitHeight: Math.max(buttonText.implicitHeight, 22)
+
+        Row {
+            id: contentRow
+            anchors.centerIn: parent
+            spacing: control.forwardIcon ? 9 : 0
+
+            Text {
+                id: buttonText
+                anchors.verticalCenter: parent.verticalCenter
+                text: control.text
+                color: control.enabled ? control.textColor : control.disabledTextColor
+                font: control.font
+            }
+
+            Item {
+                width: control.forwardIcon ? 24 : 0
+                height: 22
+                visible: control.forwardIcon
+
+                Shape {
+                    width: 22
+                    height: 22
+                    x: control.hovered && control.enabled ? 2 : 0
+                    antialiasing: true
+                    preferredRendererType: Shape.CurveRenderer
+
+                    Behavior on x {
+                        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                    }
+
+                    ShapePath {
+                        fillColor: "transparent"
+                        strokeColor: control.enabled
+                            ? control.textColor : control.disabledTextColor
+                        strokeWidth: 1.5
+                        capStyle: ShapePath.RoundCap
+                        joinStyle: ShapePath.RoundJoin
+                        PathSvg {
+                            path: "M17.25 8.25L21 12M21 12L17.25 15.75M21 12H3"
+                        }
+                    }
+                }
+            }
+        }
     }
 
     background: Rectangle {

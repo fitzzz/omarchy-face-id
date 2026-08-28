@@ -233,9 +233,8 @@ ApplicationWindow {
 
                     Text {
                         anchors.fill: parent
-                        text: "Face ID adds a faster way to unlock.\nYour password stays exactly as it is."
-                        color: root.textColor
-                        opacity: 0.72
+                        text: "Face ID adds a faster way to unlock. Your password stays exactly as it is."
+                        color: root.mutedColor
                         font.family: "monospace"
                         font.pixelSize: 13
                         lineHeight: 1.45
@@ -287,7 +286,7 @@ ApplicationWindow {
                         Text {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Unlock your computer with a glance. Face matching and liveness checks happen locally; your biometric data never leaves this computer."
+                            text: "Unlock your computer with a glance. Face matching and liveness checks happen locally. Your biometric data never leaves your computer."
                             color: root.mutedColor
                             font.family: "monospace"
                             font.pixelSize: 14
@@ -302,6 +301,7 @@ ApplicationWindow {
                             ThemedActionButton {
                                 text: "Get Started"
                                 primary: true
+                                forwardIcon: true
                                 onClicked: {
                                     gazeClient.refresh()
                                     root.currentStep = 1
@@ -381,6 +381,7 @@ ApplicationWindow {
                             ThemedActionButton {
                                 text: "Authorize and Scan Face"
                                 primary: true
+                                forwardIcon: true
                                 enabled: root.gazeReady
                                 onClicked: root.startEnrollment()
                             }

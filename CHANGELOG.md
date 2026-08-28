@@ -9,6 +9,7 @@
 - Move the lock-screen Face ID indicator slightly higher.
 - Forward terminal input through the AppImage so interactive uninstall confirmation works.
 - Replace the password disclaimer with one clear promise and rename the vague Ready step to Prepare.
+- Add the Heroicons long-arrow to forward wizard actions.
 
 ## 0.3.0 - 2026-08-28
 
