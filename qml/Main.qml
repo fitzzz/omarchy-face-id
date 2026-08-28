@@ -3,7 +3,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtMultimedia
 import "components"
 
 ApplicationWindow {
@@ -29,6 +28,8 @@ ApplicationWindow {
     readonly property color successColor: gazeClient.themeGreen
     readonly property color errorColor: gazeClient.themeRed
     readonly property var stepNames: ["Welcome", "Prepare", "Scan", "Done"]
+    readonly property int scanPageSpacing: 18
+    readonly property int scanPanelMinimumHeight: 390
 
     property int currentStep: Qt.application.arguments.indexOf("--done-page-test") >= 0 ? 3
         : Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
@@ -51,16 +52,16 @@ ApplicationWindow {
 
     function friendlyPrompt(prompt) {
         const labels = {
-            "look-straight": "Look straight ahead",
-            "look-up": "Look up slightly",
-            "look-down": "Look down slightly",
-            "look-left": "Turn slightly left",
-            "look-right": "Turn slightly right",
+            "look-straight": "Look straight ahead.",
+            "look-up": "Look up slightly.",
+            "look-down": "Look down slightly.",
+            "look-left": "Turn slightly left.",
+            "look-right": "Turn slightly right.",
             "captured": "Perfect. Hold still.",
-            "completed": "Scan complete",
-            "camera-failed": "Camera connection lost",
-            "db-failed": "Your face scan could not be saved",
-            "cancelled": "Scan cancelled"
+            "completed": "Scan complete.",
+            "camera-failed": "Camera connection lost.",
+            "db-failed": "Your face scan could not be saved.",
+            "cancelled": "Scan cancelled."
         }
         return labels[String(prompt)] || String(prompt || "Preparing camera…")
     }
@@ -88,7 +89,7 @@ ApplicationWindow {
         if (gazeReady)
             return "Video is processed locally and is never saved."
         if (!gazeClient.installed)
-            return "Install the face-scanning service, then check again."
+            return "Install Gaze through Omarchy, then check again."
         if (!gazeClient.serviceAvailable)
             return "Start the face-scanning service, then check again."
         return "Close other camera apps, then check again."
@@ -183,22 +184,6 @@ ApplicationWindow {
         }
     }
 
-    MediaDevices { id: mediaDevices }
-
-    Camera {
-        id: localPreviewCamera
-        cameraDevice: mediaDevices.defaultVideoInput
-        active: root.currentStep === 2
-            && root.enrollmentStarted
-            && !gazeClient.enrollmentComplete
-            && gazeClient.parallelPreviewAvailable
-    }
-
-    CaptureSession {
-        camera: localPreviewCamera
-        videoOutput: livePreview
-    }
-
     component PageTitle: ColumnLayout {
         property string title: ""
         property string description: ""
@@ -290,7 +275,7 @@ ApplicationWindow {
 
                     Text {
                         anchors.fill: parent
-                        text: "Face ID adds a faster way to unlock. Your password stays exactly as it is."
+                        text: "Face ID adds a faster way to unlock. Your password continues to work too."
                         color: root.mutedColor
                         font.family: "monospace"
                         font.pixelSize: 13
@@ -370,8 +355,9 @@ ApplicationWindow {
 
                 Item {
                     ColumnLayout {
+                        id: prepareLayout
                         anchors.fill: parent
-                        spacing: 22
+                        spacing: root.scanPageSpacing
 
                         PageTitle {
                             Layout.fillWidth: true
@@ -382,7 +368,7 @@ ApplicationWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.minimumHeight: 330
+                            Layout.minimumHeight: root.scanPanelMinimumHeight
                             radius: 12
                             color: root.surfaceColor
                             border.width: 1
@@ -448,15 +434,16 @@ ApplicationWindow {
 
                 Item {
                     ColumnLayout {
+                        id: scanLayout
                         anchors.fill: parent
-                        spacing: 18
+                        spacing: root.scanPageSpacing
 
                         PageTitle {
                             Layout.fillWidth: true
                             title: root.displayedPrompt
                             titleOpacity: root.scanPromptOpacity
                             description: root.scanFailed
-                                ? "Check the camera and try again."
+                                ? "Please check the camera and try again."
                                 : "Move slowly and keep your face inside the ring."
                         }
 
@@ -464,7 +451,7 @@ ApplicationWindow {
                             id: scanSurface
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.minimumHeight: 390
+                            Layout.minimumHeight: root.scanPanelMinimumHeight
                             radius: 12
                             color: root.surfaceColor
                             border.width: 1
@@ -473,24 +460,16 @@ ApplicationWindow {
                             clip: true
 
                             readonly property bool showingPreview:
-                                localPreviewCamera.active
-                                || gazeClient.previewDataUrl.length > 0
-
-                            VideoOutput {
-                                id: livePreview
-                                anchors.fill: parent
-                                visible: localPreviewCamera.active
-                                fillMode: VideoOutput.PreserveAspectCrop
-                                mirrored: true
-                            }
+                                gazeClient.previewDataUrl.length > 0
 
                             Image {
                                 anchors.fill: parent
-                                visible: !localPreviewCamera.active
-                                    && gazeClient.previewDataUrl.length > 0
+                                visible: gazeClient.previewDataUrl.length > 0
                                 source: gazeClient.previewDataUrl
                                 fillMode: Image.PreserveAspectCrop
+                                mirror: true
                                 cache: false
+                                retainWhileLoading: true
                             }
 
                             Rectangle {
@@ -520,7 +499,8 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             ThemedActionButton {
-                                text: "Cancel"
+                                text: "Back"
+                                quiet: true
                                 onClicked: root.cancelEnrollment()
                             }
                             Item { Layout.fillWidth: true }
@@ -564,7 +544,7 @@ ApplicationWindow {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
                             text: gazeClient.lockIntegrationInstalled
-                                ? "Lock your computer. After five seconds, look at the camera."
+                                ? "Try locking your computer. Face ID will appear after 3 seconds."
                                 : "Enter your password once to add Face ID to the lock screen."
                             color: root.textColor
                             opacity: 0.78

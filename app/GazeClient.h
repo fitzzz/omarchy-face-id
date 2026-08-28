@@ -7,8 +7,11 @@
 #include <QObject>
 #include <QTimer>
 
+#include <atomic>
+
 class QProcess;
 class QTemporaryFile;
+struct _GstElement;
 
 class GazeClient final : public QObject
 {
@@ -102,6 +105,8 @@ private:
     void recordEnrollmentOwnership(const QString &faceName);
     bool installUserPlugin(QString *error);
     void finishLockIntegrationInstall(bool authorized);
+    bool startParallelPreview();
+    void stopParallelPreview(bool clearFrame = false);
 
     bool m_installed = false;
     bool m_serviceAvailable = false;
@@ -122,6 +127,8 @@ private:
     QString m_lockIntegrationError;
     QProcess *m_lockIntegrationProcess = nullptr;
     QTemporaryFile *m_lockIntegrationPamFile = nullptr;
+    _GstElement *m_parallelPreviewPipeline = nullptr;
+    std::atomic<qint64> m_lastPreviewFrameUsec{0};
     QFileSystemWatcher m_themeWatcher;
     QTimer m_themeReloadTimer;
     QString m_themeRoot;

@@ -13,12 +13,16 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMetaObject>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QTextStream>
+
+#include <gst/app/gstappsink.h>
+#include <gst/gst.h>
 
 #include <pwd.h>
 #include <cstdio>
@@ -156,6 +160,7 @@ GazeClient::GazeClient(QObject *parent)
 
 GazeClient::~GazeClient()
 {
+    stopParallelPreview();
     releaseClaim();
 }
 
@@ -261,10 +266,14 @@ void GazeClient::beginEnrollment(const QString &faceName)
     emit enrollmentChanged();
     emit previewChanged();
 
+    if (m_parallelPreviewAvailable)
+        startParallelPreview();
+
     QDBusReply<void> enrollReply = iface.call(QStringLiteral("EnrollStart"), resolvedName);
     if (!enrollReply.isValid()) {
         m_enrolling = false;
         emit enrollingChanged();
+        stopParallelPreview();
         releaseClaim();
         setError(enrollReply.error().message());
         return;
@@ -279,6 +288,7 @@ void GazeClient::cancelEnrollment()
         auto iface = gazeInterface();
         iface.call(QDBus::NoBlock, QStringLiteral("EnrollStop"));
     }
+    stopParallelPreview(true);
     releaseClaim();
     m_enrolling = false;
     m_enrollmentPrompt = QStringLiteral("Enrollment cancelled");
@@ -530,6 +540,7 @@ void GazeClient::onEnrollStatus(const QString &,
         m_enrollmentComplete = prompt == QStringLiteral("completed");
         if (m_enrollmentComplete)
             recordEnrollmentOwnership(m_enrollmentFaceName);
+        stopParallelPreview();
         releaseClaim();
         emit enrollingChanged();
     }
@@ -547,6 +558,96 @@ void GazeClient::onPreviewFrame(const QByteArray &jpeg)
     m_previewDataUrl = QStringLiteral("data:image/jpeg;base64,")
         + QString::fromLatin1(jpeg.toBase64());
     emit previewChanged();
+}
+
+bool GazeClient::startParallelPreview()
+{
+    stopParallelPreview(true);
+    m_lastPreviewFrameUsec.store(0, std::memory_order_relaxed);
+
+    gst_init(nullptr, nullptr);
+    GError *error = nullptr;
+    m_parallelPreviewPipeline = gst_parse_launch(
+        "pipewiresrc do-timestamp=true ! "
+        "videoconvert ! "
+        "jpegenc quality=82 ! "
+        "appsink name=preview-sink max-buffers=1 drop=true sync=false",
+        &error);
+    if (!m_parallelPreviewPipeline) {
+        qWarning("Could not create shared PipeWire preview: %s",
+                 error ? error->message : "unknown GStreamer error");
+        g_clear_error(&error);
+        return false;
+    }
+
+    GstElement *sinkElement = gst_bin_get_by_name(
+        GST_BIN(m_parallelPreviewPipeline), "preview-sink");
+    if (!sinkElement) {
+        qWarning("Shared PipeWire preview has no frame sink");
+        stopParallelPreview();
+        return false;
+    }
+
+    GstAppSinkCallbacks callbacks{};
+    callbacks.new_sample = [](GstAppSink *sink, gpointer userData) -> GstFlowReturn {
+        auto *client = static_cast<GazeClient *>(userData);
+        GstSample *sample = gst_app_sink_pull_sample(sink);
+        if (!sample)
+            return GST_FLOW_EOS;
+
+        const qint64 now = g_get_monotonic_time();
+        const qint64 last = client->m_lastPreviewFrameUsec.load(
+            std::memory_order_relaxed);
+        if (last > 0 && now - last < 80'000) {
+            gst_sample_unref(sample);
+            return GST_FLOW_OK;
+        }
+        client->m_lastPreviewFrameUsec.store(now, std::memory_order_relaxed);
+
+        GstBuffer *buffer = gst_sample_get_buffer(sample);
+        GstMapInfo map{};
+        QByteArray jpeg;
+        if (buffer && gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+            jpeg = QByteArray(reinterpret_cast<const char *>(map.data),
+                              static_cast<qsizetype>(map.size));
+            gst_buffer_unmap(buffer, &map);
+        }
+        gst_sample_unref(sample);
+
+        if (!jpeg.isEmpty()) {
+            QMetaObject::invokeMethod(
+                client,
+                [client, jpeg = std::move(jpeg)] {
+                    if (client->m_parallelPreviewPipeline)
+                        client->onPreviewFrame(jpeg);
+                },
+                Qt::QueuedConnection);
+        }
+        return GST_FLOW_OK;
+    };
+    gst_app_sink_set_callbacks(GST_APP_SINK(sinkElement), &callbacks, this, nullptr);
+    gst_object_unref(sinkElement);
+
+    if (gst_element_set_state(m_parallelPreviewPipeline, GST_STATE_PLAYING)
+        == GST_STATE_CHANGE_FAILURE) {
+        qWarning("Could not start shared PipeWire preview");
+        stopParallelPreview();
+        return false;
+    }
+    return true;
+}
+
+void GazeClient::stopParallelPreview(bool clearFrame)
+{
+    if (m_parallelPreviewPipeline) {
+        gst_element_set_state(m_parallelPreviewPipeline, GST_STATE_NULL);
+        gst_object_unref(m_parallelPreviewPipeline);
+        m_parallelPreviewPipeline = nullptr;
+    }
+    if (clearFrame && !m_previewDataUrl.isEmpty()) {
+        m_previewDataUrl.clear();
+        emit previewChanged();
+    }
 }
 
 void GazeClient::releaseClaim()

@@ -14,9 +14,13 @@ find_package(Qt6 6.7 REQUIRED COMPONENTS
     Core
     DBus
     Gui
-    Multimedia
     Quick
     QuickControls2
+)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GSTREAMER REQUIRED IMPORTED_TARGET
+    gstreamer-1.0
+    gstreamer-app-1.0
 )
 
 qt_standard_project_setup(REQUIRES 6.7)
@@ -54,9 +58,9 @@ target_link_libraries(omarchy-face-id PRIVATE
     Qt6::Core
     Qt6::DBus
     Qt6::Gui
-    Qt6::Multimedia
     Qt6::Quick
     Qt6::QuickControls2
+    PkgConfig::GSTREAMER
 )
 
 install(TARGETS omarchy-face-id

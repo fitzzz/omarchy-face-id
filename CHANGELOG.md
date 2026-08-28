@@ -5,13 +5,16 @@
 - Add a full uninstall command that removes the Face ID enrollment and lock-screen subscriber.
 - Track dependency ownership so uninstall removes Gaze only when Omarchy Face ID installed it.
 - Clarify that Omarchy Face ID is a standalone app with an Omarchy lock-screen subscriber.
-- Wait five seconds before face authentication, keep displays awake while it runs, and restore them after unlock.
+- Wait three seconds before face authentication, keep displays awake while it runs, and restore them after unlock.
 - Move the lock-screen Face ID indicator slightly higher.
 - Forward terminal input through the AppImage so interactive uninstall confirmation works.
 - Replace the password disclaimer with one clear promise and rename the vague Ready step to Prepare.
 - Add the Heroicons long-arrow to forward wizard actions.
 - Make Back a quiet action and remove duplicate step counters from page headers.
-- Restore live enrollment video for shareable PipeWire cameras, pace pose instructions, and cross-fade them in place.
+- Restore live enrollment video with a genuinely shared PipeWire stream, pace pose instructions, and cross-fade them in place.
+- Refine scan copy, punctuation, and navigation while keeping Back visually quiet.
+- Keep the preview frame fixed between Prepare and Scan and clarify the final lock-screen instruction.
+- Show rejected faces as Locked in red and wait 2.5 seconds before trying again.
 - Continue lock-screen activation after a harmless Omarchy rescan timeout and keep plugin terminology out of user-facing errors.
 
 ## 0.3.0 - 2026-08-28

@@ -6,14 +6,23 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 main_qml="$project_dir/qml/Main.qml"
 
 # Gaze 0.2.12 intentionally omits daemon preview frames for a shareable
-# PipeWire RGB camera. Mirror its own GUI: open a parallel local preview only
-# when the parsed Gaze configuration says sharing is safe.
-grep -Fq 'import QtMultimedia' "$main_qml"
-grep -Fq 'gazeClient.parallelPreviewAvailable' "$main_qml"
-grep -Fq 'VideoOutput {' "$main_qml"
-grep -Fq '&& gazeClient.parallelPreviewAvailable' "$main_qml"
+# PipeWire RGB camera. Use a second PipeWire stream, never Qt Multimedia's
+# exclusive FFmpeg/V4L2 camera path, for the local preview.
+grep -Fq 'pipewiresrc do-timestamp=true' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'startParallelPreview()' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'gazeClient.previewDataUrl.length > 0' "$main_qml"
+grep -Fq 'retainWhileLoading: true' "$main_qml"
+grep -Fq "now - last < 80'000" "$project_dir/app/GazeClient.cpp"
+if grep -Eq 'QtMultimedia|VideoOutput \{|Camera \{' "$main_qml"; then
+    echo "The exclusive Qt Multimedia camera path is still present." >&2
+    exit 1
+fi
 grep -Fq 'interval: 1000' "$main_qml"
 grep -Fq 'id: promptTransition' "$main_qml"
+grep -Fq 'id: prepareLayout' "$main_qml"
+grep -Fq 'id: scanLayout' "$main_qml"
+[[ $(grep -Fc 'spacing: root.scanPageSpacing' "$main_qml") -eq 2 ]]
+[[ $(grep -Fc 'Layout.minimumHeight: root.scanPanelMinimumHeight' "$main_qml") -eq 2 ]]
 if grep -Fq 'Check your camera' "$main_qml"; then
     echo "The redundant camera-check step still exists." >&2
     exit 1

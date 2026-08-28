@@ -25,17 +25,18 @@ The AppImage handles setup and enrollment. The optional lock integration adds a 
 
 If a later Omarchy update changes the internal lock-service interface, Face ID fails closed: the face attempt stops and the existing password screen continues to work.
 
-## Install Gaze safely on Omarchy
+## Install Gaze on Omarchy
 
-Run this as your normal user:
+Gaze is an external, user-managed dependency. Install its official AUR packages through Omarchy so normal Omarchy updates can keep them current:
 
 ```bash
-./scripts/install-gaze-arch.sh
+omarchy pkg aur add gaze-bin gaze-gui-bin
+sudo systemctl enable --now gazed.service
 ```
 
-The script downloads Gaze 0.2.12 from its official GitHub release, verifies the pinned SHA-256 digest, installs it with package scriptlets disabled, verifies protected PAM files are unchanged, and enables only `gazed.service`. Afterward, run `gaze doctor` and open the AppImage to enroll.
+Then run `gaze doctor` and open the AppImage to enroll. This follows both [Gaze's Arch instructions](https://github.com/GunduLabs/gaze#install) and [Omarchy's AUR package workflow](https://learn.omacom.io/books/2/pages/66), rather than distributing a private Gaze build.
 
-If Gaze is already installed, the installer leaves it untouched and records no ownership. If Omarchy Face ID installs Gaze, it writes a root-owned receipt so a later uninstall can remove only the dependency it added.
+The official `gaze-bin` package currently configures Gaze in shared PAM surfaces such as sudo during installation. That behavior belongs to Gaze's package, not this AppImage. Omarchy Face ID itself installs only its dedicated face-only lock service and never edits the password, sudo, polkit, or shared system authentication stacks. Because Gaze is installed separately through Omarchy, removing Omarchy Face ID leaves the user-managed Gaze packages in place.
 
 ## Run the current AppImage
 
@@ -50,7 +51,7 @@ After saving a face scan, enable the lock-screen subscriber:
 ./scripts/install-lock-integration.sh
 ```
 
-Then lock the computer and look directly at the camera. The lock screen shows a moving face, an orange verification sweep, and a green checkmark before it opens. Password entry remains available throughout.
+Then lock the computer and look directly at the camera. Face ID appears after three seconds. The lock screen shows a moving face, an orange verification sweep, a red Locked state after a rejected face, and a green Unlocked checkmark before it opens. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
 
 ## Uninstall
 
@@ -66,7 +67,7 @@ From a source checkout, `./scripts/uninstall.sh` runs the same command. It remov
 
 ## Build from source
 
-Requirements: CMake 3.24 or newer, Ninja, a C++20 compiler, and Qt 6.7 or newer with Core, DBus, Gui, Quick, and Quick Controls 2.
+Requirements: CMake 3.24 or newer, Ninja, pkg-config, GStreamer 1.0 with its app library and PipeWire plugin, a C++20 compiler, and Qt 6.7 or newer with Core, DBus, Gui, Quick, and Quick Controls 2.
 
 ```bash
 cmake -S . -B build-native -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -87,7 +88,7 @@ The script downloads a pinned, checksum-verified linuxdeploy release to obtain `
 
 When `com.gundulabs.Gaze` is present on the system bus, the app claims the current user, starts enrollment, receives Gaze's prompts and preview frames, and releases the claim on completion or cancellation. When the service is missing or stops responding, the app reports that enrollment is unavailable and leaves the operating system untouched.
 
-Gaze remains the sole owner of face matching, liveness detection, enrollment, and biometric storage. For exclusive V4L2 or infrared configurations, the app renders Gaze's preview frames. For a PipeWire-only RGB configuration, Gaze 0.2.12 deliberately omits those frames because PipeWire can safely share the camera; the app mirrors Gaze's own GUI by opening a display-only Qt preview alongside daemon capture.
+Gaze remains the sole owner of face matching, liveness detection, enrollment, and biometric storage. For exclusive V4L2 or infrared configurations, the app renders Gaze's preview frames. For a PipeWire-only RGB configuration, Gaze 0.2.12 deliberately omits those frames because PipeWire can safely share the camera; the app mirrors Gaze's own GUI behavior by opening a second, display-only PipeWire stream alongside daemon capture. The app never opens the camera through Qt Multimedia or direct V4L2.
 
 ## Project status
 

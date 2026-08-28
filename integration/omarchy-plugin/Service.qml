@@ -26,7 +26,8 @@ Item {
     readonly property bool overlayVisible: overlayPreviewVisible || (lockService
         && compatible
         && lockService.locked
-        && (status === "waiting" || status === "checking" || status === "success"))
+        && (status === "waiting" || status === "checking"
+            || status === "unauthorized" || status === "success"))
     readonly property string aboveLockRule: 'hl.layer_rule({ name = "omarchy-face-id-above-lock", match = { namespace = "omarchy-face-id-overlay" }, above_lock = 1 })'
 
     readonly property string userName: Quickshell.env("USER") || Quickshell.env("LOGNAME")
@@ -95,10 +96,10 @@ Item {
         }
     }
 
-    function scheduleRetry() {
+    function scheduleRetry(nextStatus) {
         if (!lockService || !compatible || !pamConfigured || !lockService.locked) return
         if (lockService.authenticatingPassword) return
-        status = "waiting"
+        status = nextStatus || "waiting"
         retryTimer.restart()
     }
 
@@ -120,7 +121,10 @@ Item {
             return
         }
 
-        scheduleRetry()
+        if (result === PamResult.Failed || result === PamResult.MaxTries)
+            scheduleRetry("unauthorized")
+        else
+            scheduleRetry()
     }
 
     function ensureLayerRule() {
@@ -216,7 +220,7 @@ Item {
     // remains available throughout this grace period.
     Timer {
         id: startTimer
-        interval: 5000
+        interval: 3000
         repeat: false
         onTriggered: root.startAttempt()
     }
@@ -235,7 +239,7 @@ Item {
 
     Timer {
         id: retryTimer
-        interval: 1000
+        interval: 2500
         repeat: false
         onTriggered: root.startAttempt()
     }
@@ -307,8 +311,10 @@ Item {
                 y: Math.max(36, parent.height * 0.5 - height - 74)
 
                 readonly property bool checking: root.overlayState === "checking"
+                readonly property bool unauthorized: root.overlayState === "unauthorized"
                 readonly property bool success: root.overlayState === "success"
                 readonly property color activeColor: success ? "#65d1a7"
+                    : unauthorized ? Color.lock.textError
                     : checking ? "#f59e0b" : Color.accent
                 property int sweepIndex: 0
                 property int glanceIndex: 0
@@ -330,11 +336,12 @@ Item {
                             anchors.top: parent.top
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: 2
-                            height: indicator.success ? 9 : 7
+                            height: indicator.success ? 9 : indicator.unauthorized ? 8 : 7
                             radius: 1
                             color: indicator.activeColor
                             opacity: {
                                 if (indicator.success) return 0.8
+                                if (indicator.unauthorized) return 0.72
                                 if (!indicator.checking) return 0.2
                                 const distance = (index - indicator.sweepIndex + 72) % 72
                                 return distance < 10 ? 0.92 - distance * 0.075 : 0.13
@@ -393,7 +400,11 @@ Item {
                             strokeColor: indicator.activeColor
                             strokeWidth: 3.5
                             capStyle: ShapePath.RoundCap
-                            PathSvg { path: "M25 48C31 55 45 55 51 48" }
+                            PathSvg {
+                                path: indicator.unauthorized
+                                    ? "M25 55C31 48 45 48 51 55"
+                                    : "M25 48C31 55 45 55 51 48"
+                            }
                         }
                     }
 
@@ -456,8 +467,10 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: 212
                     text: indicator.success ? "UNLOCKED"
+                        : indicator.unauthorized ? "LOCKED"
                         : indicator.checking ? "VERIFYING" : "LOOK AT THE CAMERA"
-                    color: indicator.success ? "#65d1a7" : Color.lock.text
+                    color: indicator.unauthorized ? Color.lock.textError
+                        : indicator.success ? "#65d1a7" : Color.lock.text
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                     font.bold: true
@@ -519,7 +532,8 @@ Item {
 
         function preview(state: string): string {
             if (root.lockService && root.compatible && root.lockService.locked) return "locked"
-            if (state !== "waiting" && state !== "checking" && state !== "success")
+            if (state !== "waiting" && state !== "checking"
+                && state !== "unauthorized" && state !== "success")
                 state = "checking"
             root.overlayPreviewState = state
             root.overlayPreviewVisible = true

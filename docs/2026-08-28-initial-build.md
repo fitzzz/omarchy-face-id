@@ -13,7 +13,7 @@ The experience uses a friendly face avatar surrounded by 72 radial scan marks. T
 
 ## What the AppImage can and cannot solve
 
-The AppImage solves distribution of the setup interface, diagnostics, guided enrollment, and explicit subscriber activation. It does not make a sandboxed application into a system authenticator. Each subscriber still requires a trusted Gaze daemon, its PAM module, and a narrow connection to that subscriber's authentication lifecycle.
+The AppImage solves distribution of the setup interface, diagnostics, guided enrollment, and explicit subscriber activation. It does not make a sandboxed application into a system authenticator. Each subscriber still requires a trusted, user-managed Gaze installation, its PAM module, and a narrow connection to that subscriber's authentication lifecycle. On Omarchy, Gaze follows its official `gaze-bin`/`gaze-gui-bin` AUR packaging and remains updateable through Omarchy rather than being privately distributed by this project.
 
 This creates two layers:
 
@@ -51,7 +51,7 @@ The client uses Gaze's system D-Bus service:
 - calls: `Claim`, `Release`, `EnrollStart`, `EnrollStop`, and `IsCameraAvailable`
 - signals: `EnrollStatus`, `FaceStatus`, and `PreviewFrame`
 
-Gaze owns face matching, local embeddings, liveness checks, infrared support, model files, camera capture, and biometric storage. The Qt app does not reimplement those security-sensitive responsibilities or construct a competing camera pipeline.
+Gaze owns face matching, local embeddings, liveness checks, infrared support, model files, enrollment capture, and biometric storage. The Qt app does not reimplement those security-sensitive responsibilities. When Gaze deliberately omits preview frames for a shareable PipeWire-only RGB camera, the app opens a display-only PipeWire stream; it never reserves the device through Qt Multimedia or direct V4L2. Exclusive and infrared configurations continue to use only Gaze-provided preview frames.
 
 ## Packaging decision
 
@@ -63,12 +63,12 @@ The build script pins and verifies linuxdeploy, extracts its `appimagetool`, bui
 
 - `/etc/pam.d/omarchy-face-id-lock` contains only `pam_gaze`, `pam_deny`, and `pam_permit`; it never includes a password or shared authentication stack.
 - The user plugin watches the existing `omarchy.lock` service and begins face PAM after a short secure-surface delay.
-- Face authentication waits five seconds after lock so walking away does not immediately unlock the session. During authentication, the subscriber uses the lock service's wake method to keep displays on and prevent its five-second blank timer from racing the unlock.
+- Face authentication waits three seconds after lock so walking away does not immediately unlock the session. During authentication, the subscriber uses the lock service's wake method to keep displays on and prevent its five-second blank timer from racing the unlock.
 - Starting password authentication aborts the face attempt immediately.
 - Generation checks reject stale results from a previous lock or cancelled attempt.
 - Only `PamResult.Success` from the current face attempt may call the existing lock service's `finishUnlock()` method. A 650 ms completion hold makes the verified checkmark visible first.
 - Missing PAM, Gaze failure, camera failure, plugin failure, or an incompatible Omarchy update leaves the ordinary password path unchanged.
-- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep while verifying, and a green checkmark on success.
+- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep while verifying, a red Locked state for 2.5 seconds after a rejected face, and a green Unlocked checkmark on success.
 - Hyprland's non-interactive `above_lock = 1` rule lets that surface render over the session lock without receiving keyboard or pointer input. The overlay does not exclude the display from screenshots and disappears outside the active Face ID states.
 
 Omarchy 4.0 does not expose a supported visual slot *inside* its secure lock surface. The compatibility plugin therefore renders the status as a separate compositor layer and never patches a system QML file. If Hyprland removes or changes `above_lock`, only the visual disappears; face authentication and the first-party password screen keep their independent paths.
