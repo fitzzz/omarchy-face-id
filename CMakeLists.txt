@@ -54,6 +54,7 @@ qt_add_resources(omarchy-face-id "face_id_integration"
     PREFIX "/"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES
+        assets/ding.mp3
         integration/omarchy-plugin/Service.qml
         integration/omarchy-plugin/manifest.json
         packaging/pam/omarchy-face-id-lock

@@ -57,7 +57,7 @@ ApplicationWindow {
             "look-down": "Look down slightly.",
             "look-left": "Turn slightly left.",
             "look-right": "Turn slightly right.",
-            "captured": "Perfect. Hold still.",
+            "captured": "Wrapping up...",
             "completed": "Scan complete.",
             "camera-failed": "Camera connection lost.",
             "db-failed": "Your face scan could not be saved.",
@@ -572,8 +572,8 @@ ApplicationWindow {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
                             text: gazeClient.lockIntegrationInstalled
-                                ? "Try locking your computer. Face ID will appear after 3 seconds."
-                                : "Approve the system prompt to add Face ID to the lock screen."
+                                ? "Try locking your computer.\nFace ID will appear after 3 seconds."
+                                : "Enter your system password to add Face ID to the lock screen."
                             color: root.textColor
                             opacity: 0.78
                             font.family: "monospace"

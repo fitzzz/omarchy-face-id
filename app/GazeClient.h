@@ -110,9 +110,12 @@ private:
     void refreshLockIntegrationStatus();
     void recordEnrollmentOwnership(const QString &faceName);
     bool installUserPlugin(QString *error);
+    bool holdGazeForPasswordAuthorization(QString *error);
     void finishLockIntegrationInstall(bool authorized);
     void attemptLockPluginEnable();
+    void handleLockPluginEnableResult(bool enabled);
     void finishFaceSetup(bool success, const QString &error = {});
+    void playDing();
     bool startParallelPreview();
     void stopParallelPreview(bool clearFrame = false);
 
@@ -127,6 +130,7 @@ private:
     bool m_enrollmentComplete = false;
     int m_enrollmentProgress = 0;
     int m_enrollmentMaximum = 5;
+    int m_enrollmentGeneration = 0;
     QString m_enrollmentPrompt = QStringLiteral("Ready to begin");
     QString m_enrollmentFaceName = QStringLiteral("default");
     QString m_faceStatus;
@@ -137,8 +141,10 @@ private:
     QString m_lockIntegrationError;
     QProcess *m_lockIntegrationProcess = nullptr;
     QTemporaryFile *m_lockIntegrationPamFile = nullptr;
+    QProcess *m_lockPluginEnableProcess = nullptr;
     QString m_lockPluginEnableCommand;
     int m_lockPluginEnableAttempts = 0;
+    QTemporaryFile *m_dingFile = nullptr;
     _GstElement *m_parallelPreviewPipeline = nullptr;
     std::atomic<qint64> m_lastPreviewFrameUsec{0};
     QFileSystemWatcher m_themeWatcher;

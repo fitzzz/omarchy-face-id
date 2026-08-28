@@ -22,6 +22,18 @@ grep -Fq 'id: promptTransition' "$main_qml"
 grep -Fq 'id: prepareLayout' "$main_qml"
 grep -Fq 'id: scanLayout' "$main_qml"
 grep -Fq 'checkingColor: root.accentColor' "$main_qml"
+grep -Fq '"captured": "Wrapping up..."' "$main_qml"
+grep -Fq 'playDing();' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'assets/ding.mp3' "$project_dir/CMakeLists.txt"
+grep -Fq 'QDBusPendingCallWatcher' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'iface.setTimeout(120000)' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'iface.asyncCall(QStringLiteral("EnrollStart")' \
+    "$project_dir/app/GazeClient.cpp"
+if grep -Fq 'iface.call(QStringLiteral("EnrollStart")' \
+    "$project_dir/app/GazeClient.cpp"; then
+    echo "Enrollment authorization still blocks the Qt UI thread." >&2
+    exit 1
+fi
 if grep -Fq 'gazeClient.enrolling ? root.amberColor' "$main_qml"; then
     echo "The enrollment ring is still pinned to the warning color." >&2
     exit 1

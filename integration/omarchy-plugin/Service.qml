@@ -60,6 +60,8 @@ Item {
     readonly property string aboveLockRule: 'hl.layer_rule({ name = "omarchy-face-id-above-lock", match = { namespace = "omarchy-face-id-overlay" }, above_lock = 1 })'
 
     readonly property string userName: Quickshell.env("USER") || Quickshell.env("LOGNAME")
+    readonly property string dingPath: decodeURIComponent(
+        Qt.resolvedUrl("ding.mp3").toString().replace("file://", ""))
     readonly property bool compatible: lockService
         && typeof lockService.finishUnlock === "function"
         && lockService.locked !== undefined
@@ -84,6 +86,10 @@ Item {
 
         verifyingWordIndex = nextIndex
         verifyingWord = verifyingWords[nextIndex]
+    }
+
+    function playDing() {
+        if (!dingProcess.running) dingProcess.running = true
     }
 
     onOverlayStateChanged: {
@@ -159,6 +165,7 @@ Item {
 
         if (result === PamResult.Success) {
             status = "success"
+            root.playDing()
             // The existing Omarchy lock remains the sole owner of the session
             // lock. Hold the verified state briefly so the user sees the
             // checkmark, then ask that existing service to finish unlocking.
@@ -360,6 +367,11 @@ Item {
     Process {
         id: postUnlockWakeProcess
         command: ["omarchy-system-wake"]
+    }
+
+    Process {
+        id: dingProcess
+        command: ["/usr/bin/pw-play", root.dingPath]
     }
 
     Variants {

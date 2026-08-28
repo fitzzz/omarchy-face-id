@@ -27,24 +27,24 @@ If a later Omarchy update changes the internal lock-service interface, Face ID f
 
 ## Install on Omarchy
 
-Send the user only the versioned `Omarchy_Face_ID-0.5.4-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system password is entered. The user never needs to know or enter a package command. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin`; it does not download, bundle, fork, or privately distribute Gaze. Normal Omarchy updates therefore keep the package current.
+Send the user only the versioned `Omarchy_Face_ID-0.6.0-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system password is entered. The user never needs to know or enter a package command. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin`; it does not download, bundle, fork, or privately distribute Gaze. Normal Omarchy updates therefore keep the package current.
 
 If Gaze was already installed, Face ID uses it without claiming ownership. If the wizard installs it, a root-owned receipt records that fact so Face ID's uninstaller can invoke Gaze's official cleanup and remove the package, its PAM additions, configuration, models, and saved biometric data. The official `gaze-bin` package currently enables Gaze in shared PAM surfaces such as sudo while preserving password fallback; the wizard labels the package installation explicitly rather than hiding that system change.
 
 ## Run the current AppImage
 
 ```bash
-./dist/Omarchy_Face_ID-0.5.4-x86_64.AppImage
+./dist/Omarchy_Face_ID-0.6.0-x86_64.AppImage
 ```
 
-The wizard enrolls the face and offers to enable the lock-screen subscriber. Then lock the computer and look directly at the camera. Face ID appears after three seconds. While scanning, the lock screen cross-fades through a rotating set of short processing words every two seconds. It shows a neutral slate-gray Locked state after a rejected face and a green Unlocked checkmark before opening. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
+The wizard enrolls the face and offers to enable the lock-screen subscriber. A short completion sound plays after enrollment and after each successful Face ID unlock. Then lock the computer and look directly at the camera. Face ID appears after three seconds. While scanning, the lock screen cross-fades through a rotating set of short processing words every two seconds. It shows a neutral slate-gray Locked state after a rejected face and a green Unlocked checkmark before opening. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
 
 ## Uninstall
 
 Run the full uninstaller from the AppImage as your normal user:
 
 ```bash
-./dist/Omarchy_Face_ID-0.5.4-x86_64.AppImage --uninstall
+./dist/Omarchy_Face_ID-0.6.0-x86_64.AppImage --uninstall
 ```
 
 From a source checkout, `./scripts/uninstall.sh` runs the same command. It removes the saved `default` face enrollment, the dedicated face-only PAM service, and the Omarchy lock-screen subscriber. It removes Gaze only when Omarchy Face ID's root-owned installation receipt proves this project installed it. A Gaze installation that existed before setup is kept. Your password configuration is never removed or replaced. Delete the portable AppImage file afterward if it was not managed by an AppImage installer.
@@ -82,4 +82,4 @@ Gaze remains the sole owner of face matching, liveness detection, enrollment, an
 
 This is an early development build. The current compatibility integration uses the first-party lock service's existing `finishUnlock()` method and checks for it at runtime. Its visual is a separate, non-interactive Hyprland layer above the lock, so it does not replace the password field or patch Omarchy. A future, supported Omarchy biometric-provider API is still preferred. See [the initial build plan](docs/2026-08-28-initial-build.md).
 
-Project code is GPL-3.0-or-later. The Lucide-derived eye geometry is covered by the notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Project code is GPL-3.0-or-later. The Lucide-derived eye geometry and the CC0 MLaudio completion sound are covered by [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

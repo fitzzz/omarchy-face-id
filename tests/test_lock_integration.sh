@@ -6,10 +6,17 @@ project_root=$(cd "$(dirname "$0")/.." && pwd)
 service="$project_root/integration/omarchy-plugin/Service.qml"
 pam="$project_root/packaging/pam/omarchy-face-id-lock"
 installer="$project_root/scripts/install-lock-integration.sh"
+ding="$project_root/assets/ding.mp3"
+
+printf '%s  %s\n' \
+    '5df5ca134b7dbec367b339bd50324c8b732c286c3d6e1d3ea2772bf81b1d2347' \
+    "$ding" | sha256sum --check --status
 
 grep -Fq 'config: "omarchy-face-id-lock"' "$service"
 grep -Fq 'result === PamResult.Success' "$service"
 grep -Fq 'lockService.finishUnlock()' "$service"
+grep -Fq 'root.playDing()' "$service"
+grep -Fq 'command: ["/usr/bin/pw-play", root.dingPath]' "$service"
 grep -Fq 'id: successUnlockTimer' "$service"
 grep -Fq 'interval: 650' "$service"
 grep -Fq 'id: startTimer' "$service"

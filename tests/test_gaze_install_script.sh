@@ -11,6 +11,11 @@ bash -n "$script"
 grep -Fq 'omarchy pkg aur add gaze-bin' "$script"
 grep -Fq "ownership_value='omarchy-face-id:gaze-aur:gaze-bin'" "$script"
 grep -Fq 'sudo systemctl enable --now gazed.service' "$script"
+grep -Fq 'Installing Gaze…' "$script"
+if grep -Fq 'Installing Omarchy Face ID…' "$script"; then
+    echo "The Gaze dependency installer has the wrong product heading." >&2
+    exit 1
+fi
 grep -Fq 'QProcess::startDetached' "$client"
 grep -Fq 'OMARCHY_FACE_ID_GAZE_PATH' "$client"
 grep -Fq 'QStringLiteral(":/scripts/install-gaze-arch.sh")' "$client"

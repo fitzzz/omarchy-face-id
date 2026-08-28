@@ -5,6 +5,8 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusReply>
 #include <QDir>
 #include <QFile>
@@ -392,21 +394,39 @@ void GazeClient::beginEnrollment(const QString &faceName)
     if (m_parallelPreviewAvailable)
         startParallelPreview();
 
-    QDBusReply<void> enrollReply = iface.call(QStringLiteral("EnrollStart"), resolvedName);
-    if (!enrollReply.isValid()) {
-        m_enrolling = false;
-        emit enrollingChanged();
-        stopParallelPreview();
-        releaseClaim();
-        setError(enrollReply.error().message());
-        return;
-    }
+    const int enrollmentGeneration = ++m_enrollmentGeneration;
+    iface.setTimeout(120000);
+    auto *watcher = new QDBusPendingCallWatcher(
+        iface.asyncCall(QStringLiteral("EnrollStart"), resolvedName), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this,
+            [this, watcher, enrollmentGeneration] {
+                const QDBusPendingReply<void> enrollReply = *watcher;
+                watcher->deleteLater();
 
-    setError({});
+                if (enrollmentGeneration != m_enrollmentGeneration) {
+                    if (enrollReply.isValid() && !m_enrolling) {
+                        auto iface = gazeInterface();
+                        iface.call(QDBus::NoBlock, QStringLiteral("EnrollStop"));
+                    }
+                    return;
+                }
+
+                if (!enrollReply.isValid()) {
+                    m_enrolling = false;
+                    emit enrollingChanged();
+                    stopParallelPreview();
+                    releaseClaim();
+                    setError(enrollReply.error().message());
+                    return;
+                }
+
+                setError({});
+            });
 }
 
 void GazeClient::cancelEnrollment()
 {
+    ++m_enrollmentGeneration;
     if (m_serviceAvailable) {
         auto iface = gazeInterface();
         iface.call(QDBus::NoBlock, QStringLiteral("EnrollStop"));
@@ -468,6 +488,15 @@ void GazeClient::enableLockIntegration()
     }
     m_lockIntegrationPamFile->close();
 
+    QString authorizationError;
+    if (!holdGazeForPasswordAuthorization(&authorizationError)) {
+        m_lockIntegrationError = authorizationError;
+        delete m_lockIntegrationPamFile;
+        m_lockIntegrationPamFile = nullptr;
+        emit lockIntegrationChanged();
+        return;
+    }
+
     m_lockIntegrationInstalling = true;
     emit lockIntegrationChanged();
 
@@ -509,6 +538,9 @@ void GazeClient::refreshLockIntegrationStatus()
         && fileMatches(
             pluginRoot + QStringLiteral("/manifest.json"),
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/manifest.json")))
+        && fileMatches(
+            pluginRoot + QStringLiteral("/ding.mp3"),
+            resourceContents(QStringLiteral(":/assets/ding.mp3")))
         && pluginEnabled(configRoot);
 
     if (installed != m_lockIntegrationInstalled) {
@@ -584,14 +616,50 @@ bool GazeClient::installUserPlugin(QString *error)
                QStringLiteral(":/integration/omarchy-plugin/Service.qml"),
                pluginRoot + QStringLiteral("/Service.qml"))
         && writeResource(
-               QStringLiteral(":/integration/omarchy-plugin/manifest.json"),
-               pluginRoot + QStringLiteral("/manifest.json"));
+            QStringLiteral(":/integration/omarchy-plugin/manifest.json"),
+            pluginRoot + QStringLiteral("/manifest.json"))
+        && writeResource(
+            QStringLiteral(":/assets/ding.mp3"),
+            pluginRoot + QStringLiteral("/ding.mp3"));
+}
+
+bool GazeClient::holdGazeForPasswordAuthorization(QString *error)
+{
+    if (!m_serviceAvailable || m_claimed)
+        return true;
+
+    const passwd *account = getpwuid(getuid());
+    const QString username = account && account->pw_name
+        ? QString::fromLocal8Bit(account->pw_name)
+        : QString();
+    if (username.isEmpty()) {
+        *error = QStringLiteral("Could not prepare password authorization.");
+        return false;
+    }
+
+    // gaze-bin may add pam_gaze to Polkit. Reserve the daemon during this one
+    // setup authorization so pam_gaze falls through to the password stack
+    // instead of dismissing the password dialog while the user is typing.
+    auto iface = gazeInterface();
+    const QDBusReply<void> claimReply = iface.call(QStringLiteral("Claim"), username);
+    if (!claimReply.isValid()) {
+        *error = QStringLiteral(
+            "Face ID is busy. Close other face-authentication prompts and try again.");
+        return false;
+    }
+
+    m_claimed = true;
+    return true;
 }
 
 void GazeClient::finishLockIntegrationInstall(bool authorized)
 {
     if (!m_lockIntegrationInstalling && !m_lockIntegrationProcess)
         return;
+
+    // The privileged request has ended. Restore Gaze before activating the
+    // lock subscriber so subsequent Face ID operations work normally.
+    releaseClaim();
 
     if (m_lockIntegrationProcess) {
         m_lockIntegrationProcess->deleteLater();
@@ -621,18 +689,8 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
         return;
     }
 
-    const QString rescanCommand = QStandardPaths::findExecutable(
-        QStringLiteral("omarchy-shell"));
     const QString enableCommand = QStandardPaths::findExecutable(
         QStringLiteral("omarchy-plugin-enable"));
-    // A plugin-directory write already asks Omarchy Shell to reload. Its
-    // explicit rescan may time out while that reload is in flight even though
-    // discovery succeeded, so activation must still be attempted afterwards.
-    if (!rescanCommand.isEmpty())
-        QProcess::execute(rescanCommand,
-                          {QStringLiteral("shell"),
-                           QStringLiteral("rescanPlugins")});
-
     if (enableCommand.isEmpty()) {
         m_lockIntegrationInstalling = false;
         m_lockIntegrationError = QStringLiteral(
@@ -648,32 +706,58 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
 
 void GazeClient::attemptLockPluginEnable()
 {
-    if (!m_lockIntegrationInstalling || m_lockPluginEnableCommand.isEmpty())
+    if (!m_lockIntegrationInstalling || m_lockPluginEnableCommand.isEmpty()
+        || m_lockPluginEnableProcess)
         return;
 
     ++m_lockPluginEnableAttempts;
-    if (QProcess::execute(m_lockPluginEnableCommand,
-                          {QString::fromLatin1(pluginId)}) != 0) {
-        if (m_lockPluginEnableAttempts < 20) {
-            QTimer::singleShot(250, this, &GazeClient::attemptLockPluginEnable);
-            return;
-        }
+    auto *process = new QProcess(this);
+    m_lockPluginEnableProcess = process;
+    connect(process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this,
+            [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
+                if (m_lockPluginEnableProcess != process)
+                    return;
+                m_lockPluginEnableProcess = nullptr;
+                process->deleteLater();
+                handleLockPluginEnableResult(
+                    exitStatus == QProcess::NormalExit && exitCode == 0);
+            });
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process](QProcess::ProcessError) {
+                if (m_lockPluginEnableProcess != process)
+                    return;
+                m_lockPluginEnableProcess = nullptr;
+                process->deleteLater();
+                handleLockPluginEnableResult(false);
+            });
+    process->start(m_lockPluginEnableCommand,
+                   {QString::fromLatin1(pluginId)});
+}
 
+void GazeClient::handleLockPluginEnableResult(bool enabled)
+{
+    if (!enabled && m_lockPluginEnableAttempts < 20) {
+        QTimer::singleShot(250, this, &GazeClient::attemptLockPluginEnable);
+        return;
+    }
+
+    if (!enabled) {
         m_lockPluginEnableCommand.clear();
         m_lockPluginEnableAttempts = 0;
         m_lockIntegrationInstalling = false;
         m_lockIntegrationError = QStringLiteral(
             "Face ID couldn’t be added to the lock screen. Try again.");
         emit lockIntegrationChanged();
-        return;
+    } else {
+        m_lockPluginEnableCommand.clear();
+        m_lockPluginEnableAttempts = 0;
+        m_lockIntegrationInstalling = false;
+        m_lockIntegrationError.clear();
+        refreshLockIntegrationStatus();
+        emit lockIntegrationChanged();
     }
-
-    m_lockPluginEnableCommand.clear();
-    m_lockPluginEnableAttempts = 0;
-    m_lockIntegrationInstalling = false;
-    m_lockIntegrationError.clear();
-    refreshLockIntegrationStatus();
-    emit lockIntegrationChanged();
 }
 
 void GazeClient::onEnrollStatus(const QString &,
@@ -683,6 +767,7 @@ void GazeClient::onEnrollStatus(const QString &,
                                 const QString &prompt,
                                 double timeRemaining)
 {
+    const bool wasComplete = m_enrollmentComplete;
     m_enrollmentProgress = static_cast<int>(progress);
     m_enrollmentMaximum = static_cast<int>(maximum);
     m_enrollmentPrompt = prompt;
@@ -692,13 +777,50 @@ void GazeClient::onEnrollStatus(const QString &,
     if (done) {
         m_enrolling = false;
         m_enrollmentComplete = prompt == QStringLiteral("completed");
-        if (m_enrollmentComplete)
+        if (m_enrollmentComplete) {
             recordEnrollmentOwnership(m_enrollmentFaceName);
+            if (!wasComplete)
+                playDing();
+        }
         stopParallelPreview();
         releaseClaim();
         emit enrollingChanged();
     }
     emit enrollmentChanged();
+}
+
+void GazeClient::playDing()
+{
+    if (!m_dingFile) {
+        const QByteArray contents = resourceContents(QStringLiteral(":/assets/ding.mp3"));
+        if (contents.isEmpty())
+            return;
+
+        m_dingFile = new QTemporaryFile(
+            QDir::tempPath() + QStringLiteral("/omarchy-face-id-ding.XXXXXX.mp3"),
+            this);
+        if (!m_dingFile->open()
+            || m_dingFile->write(contents) != contents.size()
+            || !m_dingFile->flush()) {
+            delete m_dingFile;
+            m_dingFile = nullptr;
+            return;
+        }
+        m_dingFile->close();
+    }
+
+    QString player = QStandardPaths::findExecutable(QStringLiteral("pw-play"));
+    QStringList arguments{m_dingFile->fileName()};
+    if (player.isEmpty())
+        player = QStandardPaths::findExecutable(QStringLiteral("paplay"));
+    if (player.isEmpty()) {
+        player = QStandardPaths::findExecutable(QStringLiteral("mpv"));
+        arguments.prepend(QStringLiteral("--no-terminal"));
+        arguments.prepend(QStringLiteral("--really-quiet"));
+        arguments.prepend(QStringLiteral("--no-video"));
+    }
+    if (!player.isEmpty())
+        QProcess::startDetached(player, arguments);
 }
 
 void GazeClient::onFaceStatus(const QString &status)

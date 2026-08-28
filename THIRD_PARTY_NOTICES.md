@@ -47,3 +47,16 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Completion sound
+
+The enrollment-complete and Face ID unlock sound is distributed as
+`assets/ding.mp3`.
+
+Attribution: cartoon_wink_magic_sparkle.wav by MLaudio --
+https://freesound.org/s/511485/ -- License: Creative Commons 0
+
+Source page: https://freesound.org/people/MLaudio/sounds/511485/
+
+Preview file retrieved from:
+https://cdn.freesound.org/previews/511/511485_6890478-lq.mp3

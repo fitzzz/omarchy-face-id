@@ -4,8 +4,23 @@ set -euo pipefail
 
 app_binary=${1:?app binary is required}
 project_root=$(cd "$(dirname "$0")/.." && pwd)
+client="$project_root/app/GazeClient.cpp"
 temporary_dir=$(mktemp -d -t face-id-activation.XXXXXX)
 trap 'rm -rf -- "$temporary_dir"' EXIT
+
+grep -Fq 'holdGazeForPasswordAuthorization' "$client"
+grep -Fq 'instead of dismissing the password dialog' "$client"
+grep -Fq 'releaseClaim();' "$client"
+grep -Fq 'm_lockPluginEnableProcess = process' "$client"
+grep -Fq 'handleLockPluginEnableResult' "$client"
+if grep -Fq 'QProcess::execute' "$client"; then
+    echo "A setup command still blocks the Qt UI thread." >&2
+    exit 1
+fi
+if grep -Fq 'rescanPlugins' "$client"; then
+    echo "The redundant synchronous plugin rescan is still present." >&2
+    exit 1
+fi
 
 install -d "$temporary_dir/config" "$temporary_dir/bin"
 install -m 0755 "$project_root/tests/fixtures/omarchy-plugin-enable" \
@@ -33,5 +48,6 @@ fi
 cmp "$project_root/packaging/pam/omarchy-face-id-lock" "$temporary_dir/pam-service"
 cmp "$project_root/integration/omarchy-plugin/Service.qml" "$plugin_dir/Service.qml"
 cmp "$project_root/integration/omarchy-plugin/manifest.json" "$plugin_dir/manifest.json"
+cmp "$project_root/assets/ding.mp3" "$plugin_dir/ding.mp3"
 grep -Fq '"id":"fitzzz.face-id"' "$temporary_dir/config/omarchy/shell.json"
 [[ $(<"$temporary_dir/config/omarchy/enable-attempts") -eq 3 ]]

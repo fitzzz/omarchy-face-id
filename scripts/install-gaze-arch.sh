@@ -78,7 +78,7 @@ done
 
 if ((wizard_mode)); then
     clear 2>/dev/null || true
-    printf '\n  Installing Omarchy Face ID…\n\n'
+    printf '\n  Installing Gaze…\n\n'
 fi
 
 installed_by_face_id=0

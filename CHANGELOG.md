@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-28
+
+- Play the bundled CC0 `ding.mp3` after successful enrollment and successful Face ID lock-screen authentication.
+- Replace **Perfect. Hold still.** with **Wrapping up...** during the final enrollment save.
+- Credit the original MLaudio Freesound asset in the third-party notices.
+- Reserve Gaze during the final privileged installation so Polkit uses the password path instead of dismissing its dialog through background face authentication.
+- Label the dependency terminal **Installing Gaze…** instead of implying it is installing the Face ID app.
+- Keep the Qt wizard responsive while the Gaze enrollment authorization prompt is open, including when it loses focus or the user cancels it.
+- Keep Omarchy subscriber discovery and retry work off the Qt UI thread so the final screen cannot freeze on **Enabling Face ID…**.
+- Place the final lock-test instruction on two intentional lines.
+
 ## 0.5.4 - 2026-08-28
 
 - Describe final activation as system approval instead of promising a password flow, because a pre-existing Gaze installation may authorize Polkit with the enrolled face.
