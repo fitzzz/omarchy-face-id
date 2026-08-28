@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.6.1 - 2026-08-28
+
+- Use the active Omarchy theme accent for the Prepare panel border in every dependency and camera state instead of showing missing Gaze as a red error.
+- Add breathing room between the Prepare illustration and **Camera Ready** label.
+- Remove the enrollment avatar's nose so its animated eyes cannot overlap the center geometry.
+
 ## 0.6.0 - 2026-08-28
 
 - Play the bundled CC0 `ding.mp3` after successful enrollment and successful Face ID lock-screen authentication.

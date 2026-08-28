@@ -625,6 +625,9 @@ bool GazeClient::installUserPlugin(QString *error)
 
 bool GazeClient::holdGazeForPasswordAuthorization(QString *error)
 {
+    if (qEnvironmentVariableIntValue(
+            "OMARCHY_FACE_ID_SKIP_GAZE_AUTH_HOLD") == 1)
+        return true;
     if (!m_serviceAvailable || m_claimed)
         return true;
 

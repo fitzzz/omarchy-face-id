@@ -182,7 +182,7 @@ Item {
                     strokeColor: root.activeColor
                     strokeWidth: 1.55
                     capStyle: ShapePath.RoundCap
-                    PathSvg { path: "M9 9.5c.2 1.3.8 2 1.8 2H12 M6.5 14.5c2.7 2.4 8.3 2.4 11 0" }
+                    PathSvg { path: "M6.5 14.5c2.7 2.4 8.3 2.4 11 0" }
                 }
             }
         }

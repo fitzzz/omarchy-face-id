@@ -20,6 +20,12 @@ fi
 grep -Fq 'interval: 1000' "$main_qml"
 grep -Fq 'id: promptTransition' "$main_qml"
 grep -Fq 'id: prepareLayout' "$main_qml"
+grep -Fq 'id: prepareTitleGap' "$main_qml"
+grep -Fq 'border.color: root.accentColor' "$main_qml"
+if grep -Fq ': root.gazeReady ? root.accentColor : root.errorColor' "$main_qml"; then
+    echo "The Prepare panel still uses an error border when Gaze is missing." >&2
+    exit 1
+fi
 grep -Fq 'id: scanLayout' "$main_qml"
 grep -Fq 'checkingColor: root.accentColor' "$main_qml"
 grep -Fq '"captured": "Wrapping up..."' "$main_qml"
@@ -42,6 +48,11 @@ fi
 [[ $(grep -Fc 'Layout.minimumHeight: root.scanPanelMinimumHeight' "$main_qml") -eq 2 ]]
 if grep -Fq 'Check your camera' "$main_qml"; then
     echo "The redundant camera-check step still exists." >&2
+    exit 1
+fi
+if grep -Fq 'M9 9.5c.2 1.3.8 2 1.8 2H12' \
+    "$project_dir/qml/components/FaceScanIndicator.qml"; then
+    echo "The moving enrollment avatar still includes a nose path."
     exit 1
 fi
 

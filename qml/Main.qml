@@ -380,9 +380,7 @@ ApplicationWindow {
                             radius: 12
                             color: root.surfaceColor
                             border.width: 1
-                            border.color: gazeClient.faceSetupInstalling
-                                ? root.amberColor
-                                : root.gazeReady ? root.accentColor : root.errorColor
+                            border.color: root.accentColor
 
                             ColumnLayout {
                                 anchors.centerIn: parent
@@ -398,6 +396,10 @@ ApplicationWindow {
                                     primaryColor: root.accentColor
                                     checkingColor: root.amberColor
                                     mutedColor: root.mutedColor
+                                }
+                                Item {
+                                    id: prepareTitleGap
+                                    Layout.preferredHeight: 10
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
