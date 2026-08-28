@@ -27,6 +27,16 @@ After installing this repository as an Omarchy plugin, the visual preview can be
 omarchy-shell shell summon fitzzz.face-unlock '{}'
 ```
 
+If `omarchy plugin add` prints `omarchy-shell is not responding`, first check:
+
+```bash
+omarchy-shell shell ping
+omarchy plugin list
+omarchy-shell face-unlock status
+```
+
+On the development machine, a full plugin rescan took about five seconds while the command's IPC timeout was two seconds. The message was transient: the plugin loaded, the shell recovered, and the lock remained unlocked. Do not repeat installation if the plugin already appears in the list. Never add, update, or rescan plugins while the session is locked.
+
 Do not install or enable this development build on a machine without an out-of-band recovery path. It does not yet modify PAM, but Omarchy currently has an upstream lock-service reload defect that must be resolved before lock-screen testing.
 
 ## Planned backend
