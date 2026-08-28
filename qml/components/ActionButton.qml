@@ -15,8 +15,12 @@ Button {
     property color borderColor: "#476258"
     property color disabledTextColor: "#66706b"
     property bool forwardIcon: false
+    property bool quiet: false
+    readonly property color contentColor: !enabled ? disabledTextColor
+        : quiet ? (hovered ? textColor : disabledTextColor) : textColor
 
-    implicitWidth: Math.max(132, contentItem.implicitWidth + 40)
+    implicitWidth: Math.max(quiet ? 88 : 132,
+                            contentItem.implicitWidth + (quiet ? 24 : 40))
     implicitHeight: 44
     leftPadding: 20
     rightPadding: 20
@@ -41,7 +45,7 @@ Button {
                 id: buttonText
                 anchors.verticalCenter: parent.verticalCenter
                 text: control.text
-                color: control.enabled ? control.textColor : control.disabledTextColor
+                color: control.contentColor
                 font: control.font
             }
 
@@ -63,8 +67,7 @@ Button {
 
                     ShapePath {
                         fillColor: "transparent"
-                        strokeColor: control.enabled
-                            ? control.textColor : control.disabledTextColor
+                        strokeColor: control.contentColor
                         strokeWidth: 1.5
                         capStyle: ShapePath.RoundCap
                         joinStyle: ShapePath.RoundJoin
@@ -79,10 +82,12 @@ Button {
 
     background: Rectangle {
         radius: 7
-        color: control.primary
+        color: control.quiet
+            ? (control.hovered ? control.hoverColor : "transparent")
+            : control.primary
             ? (control.down ? Qt.darker(control.accentColor, 1.14) : control.accentColor)
             : (control.hovered ? control.hoverColor : control.surfaceColor)
-        border.width: control.primary ? 0 : 1
+        border.width: control.primary || control.quiet ? 0 : 1
         border.color: control.borderColor
 
         Behavior on color { ColorAnimation { duration: 120 } }

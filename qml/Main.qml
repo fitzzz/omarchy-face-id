@@ -136,19 +136,10 @@ ApplicationWindow {
     }
 
     component PageTitle: ColumnLayout {
-        property string eyebrow: "SETUP"
         property string title: ""
         property string description: ""
         spacing: 8
 
-        Text {
-            text: parent.eyebrow
-            color: root.accentColor
-            font.family: "monospace"
-            font.pixelSize: 11
-            font.letterSpacing: 1.4
-            font.weight: Font.Bold
-        }
         Text {
             Layout.fillWidth: true
             text: parent.title
@@ -318,7 +309,6 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 2 OF 4"
                             title: "Get ready for your scan"
                             description: "Keep your face uncovered and look directly at the camera."
                         }
@@ -370,6 +360,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             ThemedActionButton {
                                 text: "Back"
+                                quiet: true
                                 onClicked: root.currentStep = 0
                             }
                             Item { Layout.fillWidth: true }
@@ -396,7 +387,6 @@ ApplicationWindow {
 
                         PageTitle {
                             Layout.fillWidth: true
-                            eyebrow: "STEP 3 OF 4"
                             title: root.activePrompt
                             description: root.scanFailed
                                 ? "Check the camera and try again."
