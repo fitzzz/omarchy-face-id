@@ -59,7 +59,7 @@ Gaze owns face matching, local embeddings, liveness checks, infrared support, mo
 
 The package targets Omarchy x86-64 and uses the Qt 6 runtime already installed by Omarchy. Tests showed that fully bundling Qt and a second distribution's multimedia/system libraries could crash in the dynamic loader before application code started. The thin package avoids those conflicting libraries while keeping the compiled QML and application code in one AppImage.
 
-The build script pins and verifies linuxdeploy, extracts its `appimagetool`, builds and tests the application, installs an AppDir, and creates `dist/Omarchy_Face_ID-x86_64.AppImage`.
+The build script pins and verifies linuxdeploy, extracts its `appimagetool`, builds and tests the application, installs an AppDir, and creates a versioned artifact such as `dist/Omarchy_Face_ID-0.5.0-x86_64.AppImage`. The root `VERSION` file is the release source of truth, while `CHANGELOG.md` records each dated release.
 
 ## Implemented lock integration
 

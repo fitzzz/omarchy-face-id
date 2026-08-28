@@ -15,7 +15,7 @@ assume_yes=0
 
 usage() {
     cat <<'EOF'
-Usage: Omarchy_Face_ID-x86_64.AppImage --uninstall [--yes]
+Usage: Omarchy_Face_ID-<version>-x86_64.AppImage --uninstall [--yes]
 
 From a source checkout: ./scripts/uninstall.sh [--yes]
 

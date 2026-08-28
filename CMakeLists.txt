@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+    OMARCHY_FACE_ID_VERSION
+    LIMIT_COUNT 1
+)
+string(STRIP "${OMARCHY_FACE_ID_VERSION}" OMARCHY_FACE_ID_VERSION)
+
 project(OmarchyFaceId
-    VERSION 0.3.0
+    VERSION "${OMARCHY_FACE_ID_VERSION}"
     DESCRIPTION "Local biometric foundation for Omarchy"
     LANGUAGES CXX
 )
@@ -62,6 +68,10 @@ target_link_libraries(omarchy-face-id PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     PkgConfig::GSTREAMER
+)
+
+target_compile_definitions(omarchy-face-id PRIVATE
+    OMARCHY_FACE_ID_VERSION="${PROJECT_VERSION}"
 )
 
 install(TARGETS omarchy-face-id

@@ -8,6 +8,12 @@ build_dir="$project_dir/build-appimage"
 app_dir="$build_dir/AppDir"
 tools_dir="$build_dir/tools"
 output_dir="$project_dir/dist"
+release_version=$(<"$project_dir/VERSION")
+
+if [[ ! $release_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "VERSION must contain a semantic version such as 0.5.0." >&2
+    exit 1
+fi
 
 linuxdeploy_name="linuxdeploy-x86_64.AppImage"
 linuxdeploy_url="https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/$linuxdeploy_name"
@@ -62,8 +68,8 @@ mkdir -p "$tool_extract_dir"
 )
 
 appimagetool="$tool_extract_dir/squashfs-root/plugins/linuxdeploy-plugin-appimage/usr/bin/appimagetool"
-output="$output_dir/Omarchy_Face_ID-x86_64.AppImage"
+output="$output_dir/Omarchy_Face_ID-${release_version}-x86_64.AppImage"
 rm -f -- "$output"
-"$appimagetool" "$app_dir" "$output"
+env VERSION="$release_version" "$appimagetool" "$app_dir" "$output"
 
-echo "AppImage written to $output_dir"
+echo "AppImage $release_version written to $output"

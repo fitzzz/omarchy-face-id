@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-08-28
+
 - Add a full uninstall command that removes the Face ID enrollment and lock-screen subscriber.
 - Track dependency ownership so uninstall removes Gaze only when Omarchy Face ID installed it.
 - Clarify that Omarchy Face ID is a standalone app with an Omarchy lock-screen subscriber.
@@ -18,6 +20,7 @@
 - Enlarge lock-screen status labels and replace Verifying with synchronized processing words that cross-fade every two seconds.
 - Add Install Gaze Package to the Prepare step using Omarchy's official AUR workflow, then continue setup automatically and preserve ownership-aware uninstall.
 - Continue lock-screen activation after a harmless Omarchy rescan timeout and keep plugin terminology out of user-facing errors.
+- Introduce a single semantic `VERSION` source, versioned AppImage filenames and metadata, executable version reporting, and release-consistency tests.
 
 ## 0.3.0 - 2026-08-28
 

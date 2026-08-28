@@ -14,6 +14,7 @@
 #include <QTemporaryFile>
 #include <QTimer>
 
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -54,13 +55,18 @@ int runUninstaller(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     for (int index = 1; index < argc; ++index) {
+        if (std::strcmp(argv[index], "--version") == 0) {
+            std::printf("Omarchy Face ID %s\n", OMARCHY_FACE_ID_VERSION);
+            return 0;
+        }
         if (std::strcmp(argv[index], "--uninstall") == 0)
             return runUninstaller(argc, argv);
     }
 
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("Omarchy Face ID"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.3.0"));
+    QCoreApplication::setApplicationVersion(
+        QStringLiteral(OMARCHY_FACE_ID_VERSION));
     QCoreApplication::setOrganizationName(QStringLiteral("Omarchy Community"));
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
