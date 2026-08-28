@@ -34,3 +34,4 @@ cmp "$project_root/packaging/pam/omarchy-face-id-lock" "$temporary_dir/pam-servi
 cmp "$project_root/integration/omarchy-plugin/Service.qml" "$plugin_dir/Service.qml"
 cmp "$project_root/integration/omarchy-plugin/manifest.json" "$plugin_dir/manifest.json"
 grep -Fq '"id":"fitzzz.face-id"' "$temporary_dir/config/omarchy/shell.json"
+[[ $(<"$temporary_dir/config/omarchy/enable-attempts") -eq 3 ]]

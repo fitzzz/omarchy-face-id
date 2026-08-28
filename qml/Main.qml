@@ -483,8 +483,8 @@ ApplicationWindow {
                             radius: 12
                             color: root.surfaceColor
                             border.width: 1
-                            border.color: root.scanFailed ? root.errorColor
-                                : gazeClient.enrolling ? root.amberColor : root.accentColor
+                            border.color: root.scanFailed
+                                ? root.errorColor : root.accentColor
                             clip: true
 
                             readonly property bool showingPreview:
@@ -518,7 +518,7 @@ ApplicationWindow {
                                 showAvatar: !scanSurface.showingPreview
                                 backgroundColor: root.surfaceColor
                                 primaryColor: root.successColor
-                                checkingColor: root.amberColor
+                                checkingColor: root.accentColor
                                 mutedColor: root.scanFailed ? root.errorColor : root.mutedColor
                             }
 
@@ -608,7 +608,7 @@ ApplicationWindow {
                             }
                             ThemedActionButton {
                                 text: gazeClient.lockIntegrationInstalling
-                                    ? "Authorizing…"
+                                    ? "Enabling Face ID…"
                                     : gazeClient.lockIntegrationInstalled
                                         ? "Done" : "Enable Face ID"
                                 primary: true

@@ -602,8 +602,8 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
         m_lockIntegrationPamFile = nullptr;
     }
 
-    m_lockIntegrationInstalling = false;
     if (!authorized) {
+        m_lockIntegrationInstalling = false;
         m_lockIntegrationError = QStringLiteral(
             "Face ID wasn’t enabled. Nothing changed.");
         emit lockIntegrationChanged();
@@ -615,6 +615,7 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
     // finished so the password conversation cannot be destroyed mid-flight.
     QString pluginError;
     if (!installUserPlugin(&pluginError)) {
+        m_lockIntegrationInstalling = false;
         m_lockIntegrationError = pluginError;
         emit lockIntegrationChanged();
         return;
@@ -632,14 +633,44 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
                           {QStringLiteral("shell"),
                            QStringLiteral("rescanPlugins")});
 
-    if (enableCommand.isEmpty()
-        || QProcess::execute(enableCommand, {QString::fromLatin1(pluginId)}) != 0) {
+    if (enableCommand.isEmpty()) {
+        m_lockIntegrationInstalling = false;
         m_lockIntegrationError = QStringLiteral(
             "Face ID couldn’t be added to the lock screen. Try again.");
         emit lockIntegrationChanged();
         return;
     }
 
+    m_lockPluginEnableCommand = enableCommand;
+    m_lockPluginEnableAttempts = 0;
+    attemptLockPluginEnable();
+}
+
+void GazeClient::attemptLockPluginEnable()
+{
+    if (!m_lockIntegrationInstalling || m_lockPluginEnableCommand.isEmpty())
+        return;
+
+    ++m_lockPluginEnableAttempts;
+    if (QProcess::execute(m_lockPluginEnableCommand,
+                          {QString::fromLatin1(pluginId)}) != 0) {
+        if (m_lockPluginEnableAttempts < 20) {
+            QTimer::singleShot(250, this, &GazeClient::attemptLockPluginEnable);
+            return;
+        }
+
+        m_lockPluginEnableCommand.clear();
+        m_lockPluginEnableAttempts = 0;
+        m_lockIntegrationInstalling = false;
+        m_lockIntegrationError = QStringLiteral(
+            "Face ID couldn’t be added to the lock screen. Try again.");
+        emit lockIntegrationChanged();
+        return;
+    }
+
+    m_lockPluginEnableCommand.clear();
+    m_lockPluginEnableAttempts = 0;
+    m_lockIntegrationInstalling = false;
     m_lockIntegrationError.clear();
     refreshLockIntegrationStatus();
     emit lockIntegrationChanged();

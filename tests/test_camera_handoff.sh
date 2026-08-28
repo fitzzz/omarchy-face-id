@@ -21,6 +21,11 @@ grep -Fq 'interval: 1000' "$main_qml"
 grep -Fq 'id: promptTransition' "$main_qml"
 grep -Fq 'id: prepareLayout' "$main_qml"
 grep -Fq 'id: scanLayout' "$main_qml"
+grep -Fq 'checkingColor: root.accentColor' "$main_qml"
+if grep -Fq 'gazeClient.enrolling ? root.amberColor' "$main_qml"; then
+    echo "The enrollment ring is still pinned to the warning color." >&2
+    exit 1
+fi
 [[ $(grep -Fc 'spacing: root.scanPageSpacing' "$main_qml") -eq 2 ]]
 [[ $(grep -Fc 'Layout.minimumHeight: root.scanPanelMinimumHeight' "$main_qml") -eq 2 ]]
 if grep -Fq 'Check your camera' "$main_qml"; then

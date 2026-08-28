@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.3 - 2026-08-28
+
+- Render the enrollment ring and scan panel border with the active Omarchy theme accent instead of the warning color.
+- Keep the setup wizard in an explicit **Enabling Face ID…** state while Omarchy discovers the new lock-screen subscriber.
+- Retry subscriber activation during Omarchy's asynchronous plugin reload instead of presenting a false failure after successful authorization.
+
 ## 0.5.2 - 2026-08-28
 
 - Explain Gaze in terms of local liveness detection and infrared camera support instead of exposing unrelated package side effects.

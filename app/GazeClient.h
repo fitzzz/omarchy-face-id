@@ -111,6 +111,7 @@ private:
     void recordEnrollmentOwnership(const QString &faceName);
     bool installUserPlugin(QString *error);
     void finishLockIntegrationInstall(bool authorized);
+    void attemptLockPluginEnable();
     void finishFaceSetup(bool success, const QString &error = {});
     bool startParallelPreview();
     void stopParallelPreview(bool clearFrame = false);
@@ -136,6 +137,8 @@ private:
     QString m_lockIntegrationError;
     QProcess *m_lockIntegrationProcess = nullptr;
     QTemporaryFile *m_lockIntegrationPamFile = nullptr;
+    QString m_lockPluginEnableCommand;
+    int m_lockPluginEnableAttempts = 0;
     _GstElement *m_parallelPreviewPipeline = nullptr;
     std::atomic<qint64> m_lastPreviewFrameUsec{0};
     QFileSystemWatcher m_themeWatcher;
