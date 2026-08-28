@@ -1,0 +1,58 @@
+#!/usr/bin/python3
+"""Root-installed eligibility preflight for an Omarchy face PAM attempt.
+
+Exit 0 means Omarchy may start the dedicated face PamContext. Every other
+result skips face authentication. This executable never authorizes unlock.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_LIB = SCRIPT_PATH.parent.parent / "lib"
+if PROJECT_LIB.is_dir():
+    sys.path.insert(0, str(PROJECT_LIB))
+
+from face_unlock_preflight import validate_config, validate_pam_service  # noqa: E402
+
+GAZE_BINARY = Path("/usr/bin/gaze")
+SYSTEMCTL_BINARY = Path("/usr/bin/systemctl")
+GAZE_CONFIG = Path("/etc/gaze/config.toml")
+FACE_PAM_SERVICE = Path("/etc/pam.d/omarchy-lock-face")
+
+
+def eligible() -> bool:
+    try:
+        if not GAZE_BINARY.is_file() or not SYSTEMCTL_BINARY.is_file():
+            return False
+        if not GAZE_CONFIG.is_file() or not FACE_PAM_SERVICE.is_file():
+            return False
+
+        with GAZE_CONFIG.open("rb") as stream:
+            config = tomllib.load(stream)
+        if validate_config(config):
+            return False
+
+        pam_text = FACE_PAM_SERVICE.read_text(encoding="utf-8")
+        if validate_pam_service(pam_text):
+            return False
+
+        daemon = subprocess.run(
+            [str(SYSTEMCTL_BINARY), "is-active", "--quiet", "gazed.service"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=0.35,
+            check=False,
+        )
+        return daemon.returncode == 0
+    except (OSError, ValueError, subprocess.SubprocessError, tomllib.TOMLDecodeError):
+        return False
+
+
+if __name__ == "__main__":
+    raise SystemExit(0 if eligible() else 1)
