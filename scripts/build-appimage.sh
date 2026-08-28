@@ -69,6 +69,8 @@ mkdir -p "$tool_extract_dir"
 
 appimagetool="$tool_extract_dir/squashfs-root/plugins/linuxdeploy-plugin-appimage/usr/bin/appimagetool"
 output="$output_dir/Omarchy_Face_ID-${release_version}-x86_64.AppImage"
+legacy_output="$output_dir/Omarchy_Face_ID-x86_64.AppImage"
+rm -f -- "$legacy_output"
 rm -f -- "$output"
 env VERSION="$release_version" "$appimagetool" "$app_dir" "$output"
 

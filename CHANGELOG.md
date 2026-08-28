@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.1 - 2026-08-28
+
+- Remove the ambiguous legacy unversioned AppImage during packaging so testers cannot accidentally receive a stale setup flow.
+- Make double-clicking the AppImage the normal launch path and keep extract-and-run as an undocumented troubleshooting fallback.
+
 ## 0.5.0 - 2026-08-28
 
 - Add a full uninstall command that removes the Face ID enrollment and lock-screen subscriber.

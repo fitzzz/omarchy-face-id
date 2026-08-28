@@ -11,6 +11,8 @@ bash -n "$script"
 grep -Fq 'ln -s usr/bin/omarchy-face-id "$app_dir/AppRun"' "$script"
 grep -Fq 'linuxdeploy-plugin-appimage/usr/bin/appimagetool' "$script"
 grep -Fq 'Omarchy_Face_ID-${release_version}-x86_64.AppImage' "$script"
+grep -Fq 'legacy_output="$output_dir/Omarchy_Face_ID-x86_64.AppImage"' "$script"
+grep -Fq 'rm -f -- "$legacy_output"' "$script"
 grep -Fq "VERSION $release_version" "$project_dir/CMakeLists.txt" && {
     echo "CMake must read the release version from VERSION instead of duplicating it." >&2
     exit 1
