@@ -68,7 +68,7 @@ The build script pins and verifies linuxdeploy, extracts its `appimagetool`, bui
 - Generation checks reject stale results from a previous lock or cancelled attempt.
 - Only `PamResult.Success` from the current face attempt may call the existing lock service's `finishUnlock()` method. A 650 ms completion hold makes the verified checkmark visible first.
 - Missing PAM, Gaze failure, camera failure, plugin failure, or an incompatible Omarchy update leaves the ordinary password path unchanged.
-- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep while verifying, a red Locked state for 2.5 seconds after a rejected face, and a green Unlocked checkmark on success.
+- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep while verifying, a neutral slate-gray Locked state for 2.5 seconds after a rejected face, and a green Unlocked checkmark on success.
 - Hyprland's non-interactive `above_lock = 1` rule lets that surface render over the session lock without receiving keyboard or pointer input. The overlay does not exclude the display from screenshots and disappears outside the active Face ID states.
 
 Omarchy 4.0 does not expose a supported visual slot *inside* its secure lock surface. The compatibility plugin therefore renders the status as a separate compositor layer and never patches a system QML file. If Hyprland removes or changes `above_lock`, only the visual disappears; face authentication and the first-party password screen keep their independent paths.

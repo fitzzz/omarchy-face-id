@@ -14,7 +14,7 @@
 - Restore live enrollment video with a genuinely shared PipeWire stream, pace pose instructions, and cross-fade them in place.
 - Refine scan copy, punctuation, and navigation while keeping Back visually quiet.
 - Keep the preview frame fixed between Prepare and Scan and clarify the final lock-screen instruction.
-- Show rejected faces as Locked in red and wait 2.5 seconds before trying again.
+- Show rejected faces as Locked in a wallpaper-neutral slate gray and wait 2.5 seconds before trying again.
 - Continue lock-screen activation after a harmless Omarchy rescan timeout and keep plugin terminology out of user-facing errors.
 
 ## 0.3.0 - 2026-08-28

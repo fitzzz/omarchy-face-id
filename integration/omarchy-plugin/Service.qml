@@ -313,8 +313,9 @@ Item {
                 readonly property bool checking: root.overlayState === "checking"
                 readonly property bool unauthorized: root.overlayState === "unauthorized"
                 readonly property bool success: root.overlayState === "success"
+                readonly property color lockedColor: "#4b5563"
                 readonly property color activeColor: success ? "#65d1a7"
-                    : unauthorized ? Color.lock.textError
+                    : unauthorized ? lockedColor
                     : checking ? "#f59e0b" : Color.accent
                 property int sweepIndex: 0
                 property int glanceIndex: 0
@@ -469,7 +470,7 @@ Item {
                     text: indicator.success ? "UNLOCKED"
                         : indicator.unauthorized ? "LOCKED"
                         : indicator.checking ? "VERIFYING" : "LOOK AT THE CAMERA"
-                    color: indicator.unauthorized ? Color.lock.textError
+                    color: indicator.unauthorized ? indicator.lockedColor
                         : indicator.success ? "#65d1a7" : Color.lock.text
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption

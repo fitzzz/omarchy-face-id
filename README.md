@@ -51,7 +51,7 @@ After saving a face scan, enable the lock-screen subscriber:
 ./scripts/install-lock-integration.sh
 ```
 
-Then lock the computer and look directly at the camera. Face ID appears after three seconds. The lock screen shows a moving face, an orange verification sweep, a red Locked state after a rejected face, and a green Unlocked checkmark before it opens. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
+Then lock the computer and look directly at the camera. Face ID appears after three seconds. The lock screen shows a moving face, an orange verification sweep, a neutral slate-gray Locked state after a rejected face, and a green Unlocked checkmark before it opens. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
 
 ## Uninstall
 
