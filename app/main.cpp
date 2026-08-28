@@ -2,14 +2,52 @@
 
 #include "GazeClient.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileDevice>
 #include <QGuiApplication>
+#include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QTemporaryFile>
 #include <QTimer>
+
+#include <cstring>
+
+namespace {
+int runUninstaller(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+    const qsizetype uninstallArgument = app.arguments().indexOf(
+        QStringLiteral("--uninstall"));
+
+    QFile uninstallResource(QStringLiteral(":/scripts/uninstall.sh"));
+    QTemporaryFile uninstallScript(
+        QDir::tempPath() + QStringLiteral("/omarchy-face-id-uninstall.XXXXXX"));
+    if (!uninstallResource.open(QIODevice::ReadOnly)
+        || !uninstallScript.open()
+        || uninstallScript.write(uninstallResource.readAll()) < 1
+        || !uninstallScript.flush())
+        return 1;
+
+    QFile::setPermissions(
+        uninstallScript.fileName(),
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    QStringList arguments = app.arguments().mid(uninstallArgument + 1);
+    arguments.prepend(uninstallScript.fileName());
+    return QProcess::execute(QStringLiteral("/usr/bin/bash"), arguments);
+}
+}
 
 int main(int argc, char *argv[])
 {
+    for (int index = 1; index < argc; ++index) {
+        if (std::strcmp(argv[index], "--uninstall") == 0)
+            return runUninstaller(argc, argv);
+    }
+
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("Omarchy Face ID"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.3.0"));

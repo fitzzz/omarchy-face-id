@@ -31,6 +31,14 @@ constexpr auto interfaceName = "com.gundulabs.Gaze";
 constexpr auto facePamPath = "/etc/pam.d/omarchy-face-id-lock";
 constexpr auto pluginId = "fitzzz.face-id";
 
+QString enrollmentReceiptPath()
+{
+    QString stateRoot = qEnvironmentVariable("XDG_STATE_HOME");
+    if (stateRoot.isEmpty())
+        stateRoot = QDir::homePath() + QStringLiteral("/.local/state");
+    return stateRoot + QStringLiteral("/omarchy-face-id/enrolled-face");
+}
+
 QByteArray resourceContents(const QString &path)
 {
     QFile file(path);
@@ -208,6 +216,7 @@ void GazeClient::beginEnrollment(const QString &faceName)
     m_faceStatus.clear();
     m_previewDataUrl.clear();
     m_enrolling = true;
+    m_enrollmentFaceName = resolvedName;
     emit enrollingChanged();
     emit enrollmentChanged();
     emit previewChanged();
@@ -333,6 +342,28 @@ void GazeClient::refreshLockIntegrationStatus()
         m_lockIntegrationInstalled = installed;
         emit lockIntegrationChanged();
     }
+
+    // Version 0.3.0 predates enrollment receipts and always used "default".
+    // A matching installed subscriber is sufficient evidence to migrate it.
+    if (installed && !QFileInfo::exists(enrollmentReceiptPath()))
+        recordEnrollmentOwnership(QStringLiteral("default"));
+}
+
+void GazeClient::recordEnrollmentOwnership(const QString &faceName)
+{
+    const QString receiptPath = enrollmentReceiptPath();
+    const QFileInfo receiptInfo(receiptPath);
+    if (!QDir().mkpath(receiptInfo.absolutePath()))
+        return;
+
+    QSaveFile receipt(receiptPath);
+    const QByteArray contents = faceName.toUtf8() + '\n';
+    if (receipt.open(QIODevice::WriteOnly)
+        && receipt.write(contents) == contents.size()
+        && receipt.commit()) {
+        QFile::setPermissions(receiptPath,
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    }
 }
 
 bool GazeClient::installUserPlugin(QString *error)
@@ -453,6 +484,8 @@ void GazeClient::onEnrollStatus(const QString &,
     if (done) {
         m_enrolling = false;
         m_enrollmentComplete = prompt == QStringLiteral("completed");
+        if (m_enrollmentComplete)
+            recordEnrollmentOwnership(m_enrollmentFaceName);
         releaseClaim();
         emit enrollingChanged();
     }

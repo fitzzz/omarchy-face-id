@@ -63,6 +63,7 @@ The build script pins and verifies linuxdeploy, extracts its `appimagetool`, bui
 
 - `/etc/pam.d/omarchy-face-id-lock` contains only `pam_gaze`, `pam_deny`, and `pam_permit`; it never includes a password or shared authentication stack.
 - The user plugin watches the existing `omarchy.lock` service and begins face PAM after a short secure-surface delay.
+- Face authentication waits five seconds after lock so walking away does not immediately unlock the session. During authentication, the subscriber uses the lock service's wake method to keep displays on and prevent its five-second blank timer from racing the unlock.
 - Starting password authentication aborts the face attempt immediately.
 - Generation checks reject stale results from a previous lock or cancelled attempt.
 - Only `PamResult.Success` from the current face attempt may call the existing lock service's `finishUnlock()` method. A 650 ms completion hold makes the verified checkmark visible first.

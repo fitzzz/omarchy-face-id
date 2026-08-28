@@ -18,6 +18,7 @@ install -m 0755 "$project_root/tests/fixtures/omarchy-shell" \
 PATH="$temporary_dir/bin:$PATH" \
 OMARCHY_FACE_ID_CONFIG_ROOT="$temporary_dir/config" \
 OMARCHY_FACE_ID_PAM_PATH="$temporary_dir/pam-service" \
+XDG_STATE_HOME="$temporary_dir/state" \
 QT_QPA_PLATFORM=offscreen \
 QT_QUICK_BACKEND=software \
     "$app_binary" --integration-install-test

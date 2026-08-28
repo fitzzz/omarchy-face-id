@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+echo "Developer helper: this removes only the lock-screen subscriber." >&2
+echo "For a full end-user uninstall, run ./scripts/uninstall.sh instead." >&2
+
 pam_target=/etc/pam.d/omarchy-face-id-lock
 
 if omarchy-hyprland-session-locked >/dev/null 2>&1; then

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add a full uninstall command that removes the Face ID enrollment and lock-screen subscriber.
+- Track dependency ownership so uninstall removes Gaze only when Omarchy Face ID installed it.
+- Clarify that Omarchy Face ID is a standalone app with an Omarchy lock-screen subscriber.
+- Wait five seconds before face authentication, keep displays awake while it runs, and restore them after unlock.
+- Move the lock-screen Face ID indicator slightly higher.
+
 ## 0.3.0 - 2026-08-28
 
 - Rename the product, application, package, and repository identity to Omarchy Face ID.

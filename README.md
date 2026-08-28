@@ -1,6 +1,6 @@
 # Omarchy Face ID
 
-Omarchy Face ID is a local biometric foundation for Omarchy, powered by [Gaze](https://github.com/GunduLabs/gaze). The lock screen is its first subscriber. Face ID may add a way in, but it must never remove an existing password path.
+Omarchy Face ID is a standalone setup app and local biometric foundation for Omarchy, powered by [Gaze](https://github.com/GunduLabs/gaze). During setup, the app adds a small Omarchy lock-screen subscriber; the product itself is not an Omarchy plugin. Face ID may add a way in, but it must never remove an existing password path.
 
 The current build includes:
 
@@ -35,6 +35,8 @@ Run this as your normal user:
 
 The script downloads Gaze 0.2.12 from its official GitHub release, verifies the pinned SHA-256 digest, installs it with package scriptlets disabled, verifies protected PAM files are unchanged, and enables only `gazed.service`. Afterward, run `gaze doctor` and open the AppImage to enroll.
 
+If Gaze is already installed, the installer leaves it untouched and records no ownership. If Omarchy Face ID installs Gaze, it writes a root-owned receipt so a later uninstall can remove only the dependency it added.
+
 ## Run the current AppImage
 
 ```bash
@@ -49,6 +51,16 @@ After saving a face scan, enable the lock-screen subscriber:
 ```
 
 Then lock the computer and look directly at the camera. The lock screen shows a moving face, an orange verification sweep, and a green checkmark before it opens. Password entry remains available throughout.
+
+## Uninstall
+
+Run the full uninstaller from the AppImage as your normal user:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_ID-x86_64.AppImage --uninstall
+```
+
+From a source checkout, `./scripts/uninstall.sh` runs the same command. It removes the saved `default` face enrollment, the dedicated face-only PAM service, and the Omarchy lock-screen subscriber. It removes Gaze only when Omarchy Face ID's root-owned installation receipt proves this project installed it. A Gaze installation that existed before setup is kept. Your password configuration is never removed or replaced. Delete the portable AppImage file afterward if it was not managed by an AppImage installer.
 
 `APPIMAGE_EXTRACT_AND_RUN=1` avoids relying on FUSE. The package intentionally uses the Qt 6 libraries already supplied by Omarchy; bundling a second Linux multimedia stack caused loader conflicts during testing.
 

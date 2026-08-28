@@ -97,6 +97,7 @@ private:
     void scheduleThemeReload();
     void reloadTheme();
     void refreshLockIntegrationStatus();
+    void recordEnrollmentOwnership(const QString &faceName);
     bool installUserPlugin(QString *error);
     void finishLockIntegrationInstall(bool authorized);
 
@@ -109,6 +110,7 @@ private:
     int m_enrollmentProgress = 0;
     int m_enrollmentMaximum = 5;
     QString m_enrollmentPrompt = QStringLiteral("Ready to begin");
+    QString m_enrollmentFaceName = QStringLiteral("default");
     QString m_faceStatus;
     QString m_previewDataUrl;
     QString m_errorMessage;

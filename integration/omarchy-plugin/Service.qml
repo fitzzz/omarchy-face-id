@@ -50,6 +50,7 @@ Item {
         retryTimer.stop()
         startTimer.stop()
         successUnlockTimer.stop()
+        postUnlockWakeTimer.stop()
         abortAttempt()
         ensureLayerRule()
 
@@ -58,7 +59,9 @@ Item {
             return
         }
 
-        status = "waiting"
+        // Give the user time to leave the desk before the camera opens. The
+        // overlay stays hidden until authentication actually begins.
+        status = "grace"
         startTimer.restart()
     }
 
@@ -124,6 +127,11 @@ Item {
         if (!layerRuleProcess.running) layerRuleProcess.running = true
     }
 
+    function keepDisplaysAwake() {
+        if (!lockService || !lockService.locked) return
+        if (typeof lockService.runWake === "function") lockService.runWake()
+    }
+
     Component.onCompleted: {
         resolveTimer.start()
         ensureLayerRule()
@@ -146,7 +154,10 @@ Item {
 
         function onLockedChanged() {
             if (root.lockService.locked) root.beginLockGeneration()
-            else root.endLockGeneration()
+            else {
+                root.endLockGeneration()
+                postUnlockWakeTimer.restart()
+            }
         }
 
         function onAuthenticatingPasswordChanged() {
@@ -201,13 +212,25 @@ Item {
         onTriggered: root.findLockService()
     }
 
-    // Avoid authenticating before Omarchy's session-lock surface has had time
-    // to become secure. Password input remains available throughout this wait.
+    // Let the user leave the desk before opening the camera. Password input
+    // remains available throughout this grace period.
     Timer {
         id: startTimer
-        interval: 1500
+        interval: 5000
         repeat: false
         onTriggered: root.startAttempt()
+    }
+
+    // Omarchy's first-party lock blanks displays after five seconds. Re-arm
+    // that timer through its public wake method while Face ID is subscribed,
+    // preventing a blank/wake race during face authentication.
+    Timer {
+        id: keepAwakeTimer
+        interval: 3000
+        repeat: true
+        running: root.lockService && root.compatible && root.pamConfigured
+            && root.lockService.locked
+        onTriggered: root.keepDisplaysAwake()
     }
 
     Timer {
@@ -230,6 +253,17 @@ Item {
         }
     }
 
+    // The stock lock starts blank and wake commands asynchronously. Ensure the
+    // final display transition after either unlock path is always "on".
+    Timer {
+        id: postUnlockWakeTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            if (!postUnlockWakeProcess.running) postUnlockWakeProcess.running = true
+        }
+    }
+
     Timer {
         id: previewTimer
         interval: 4000
@@ -243,6 +277,11 @@ Item {
     Process {
         id: layerRuleProcess
         command: ["hyprctl", "eval", root.aboveLockRule]
+    }
+
+    Process {
+        id: postUnlockWakeProcess
+        command: ["omarchy-system-wake"]
     }
 
     Variants {
@@ -265,7 +304,7 @@ Item {
                 width: 220
                 height: 250
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: Math.max(36, parent.height * 0.5 - height - 42)
+                y: Math.max(36, parent.height * 0.5 - height - 74)
 
                 readonly property bool checking: root.overlayState === "checking"
                 readonly property bool success: root.overlayState === "success"

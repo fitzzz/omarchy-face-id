@@ -46,6 +46,7 @@ qt_add_resources(omarchy-face-id "face_id_integration"
         integration/omarchy-plugin/Service.qml
         integration/omarchy-plugin/manifest.json
         packaging/pam/omarchy-face-id-lock
+        scripts/uninstall.sh
 )
 
 target_link_libraries(omarchy-face-id PRIVATE
@@ -77,6 +78,13 @@ if(BUILD_TESTING)
     )
     add_test(NAME gaze-install-script
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gaze_install_script.sh
+    )
+    add_test(NAME uninstall-script
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_uninstall_script.sh
+    )
+    add_test(NAME uninstall-cli COMMAND omarchy-face-id --uninstall --help)
+    set_tests_properties(uninstall-cli PROPERTIES ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
     )
     add_test(NAME camera-handoff
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_camera_handoff.sh
