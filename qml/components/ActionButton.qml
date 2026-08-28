@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import QtQuick
+import QtQuick.Controls
+
+Button {
+    id: control
+
+    property bool primary: false
+    property color accentColor: "#65d1a7"
+    property color textColor: primary ? "#10201a" : "#d5ddd8"
+
+    implicitWidth: Math.max(132, contentItem.implicitWidth + 40)
+    implicitHeight: 44
+    leftPadding: 20
+    rightPadding: 20
+    font.family: "monospace"
+    font.pixelSize: 14
+    font.weight: Font.DemiBold
+
+    contentItem: Text {
+        text: control.text
+        color: control.enabled ? control.textColor : "#66706b"
+        font: control.font
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+    }
+
+    background: Rectangle {
+        radius: 7
+        color: control.primary
+            ? (control.down ? Qt.darker(control.accentColor, 1.14) : control.accentColor)
+            : (control.hovered ? "#24322d" : "#18241f")
+        border.width: control.primary ? 0 : 1
+        border.color: control.enabled ? "#476258" : "#2a3631"
+
+        Behavior on color { ColorAnimation { duration: 120 } }
+    }
+}

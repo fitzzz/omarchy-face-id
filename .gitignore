@@ -5,6 +5,9 @@ __pycache__/
 .coverage
 coverage/
 build/
+build-*/
 dist/
+dist-*/
+*.AppImage
 *.log
 *.qmlc

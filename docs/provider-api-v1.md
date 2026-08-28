@@ -1,4 +1,6 @@
-# Omarchy biometric provider API v1 proposal
+# Historical proposal: Omarchy biometric provider API v1
+
+> This document records the original plugin-based integration proposal. The project now ships a separate Qt setup application. The proposal remains relevant only to a future, upstream-supported lock-screen authentication hook; none of it is installed or enabled by the current AppImage.
 
 This is a proposal for the smallest upstream Omarchy extension needed by `fitzzz.face-unlock`. It is not part of the current Omarchy 4.0.0 plugin schema.
 

@@ -1,52 +1,58 @@
 # Omarchy Face Unlock
 
-An update-safe, local face-authentication integration for Omarchy's first-party lock screen.
+Omarchy Face Unlock is a Qt 6/QML setup app for checking a webcam and enrolling a face with [Gaze](https://github.com/GunduLabs/gaze). It is designed around one rule: face recognition may add a way in, but it must never take the password path away.
 
-This repository is under active development. The current plugin is intentionally inert: it provides compatibility diagnostics and a theme-native indicator preview, but it cannot authenticate or unlock a session. Face authentication stays disabled until Omarchy ships the provider API described in [the initial build design](docs/2026-08-28-initial-build.md).
+The current build includes:
 
-## Safety contract
+- a live webcam preview;
+- an animated eye that looks left, center, and right and blinks;
+- a five-angle guided enrollment walkthrough;
+- real Gaze enrollment through its system D-Bus service when Gaze is available;
+- a safe preview mode when Gaze is absent; and
+- an Omarchy-targeted AppImage build.
 
-- Omarchy's stock password field remains available and independent.
-- This plugin never replaces `omarchy.lock` or edits `/etc/pam.d/omarchy-lock-password`.
-- Only the first-party lock service may own or release `WlSessionLock`.
-- Missing hardware, services, models, configuration, or provider APIs disable face attempts.
-- Runtime code never writes inside the git-managed plugin checkout.
-- Installation and removal of privileged files will remain explicit and reversible.
+## Current safety boundary
 
-## Current development commands
+The app does **not** install a PAM module, edit `/etc/pam.d`, alter Omarchy's lock screen, or enable face unlocking by itself. Gaze's current Arch installer changes sudo and polkit authentication automatically, so this project does not run that installer. That behavior is too broad for a password-first setup.
 
-```bash
-omarchy plugin validate .
-./bin/doctor
-./bin/test
-```
+The AppImage is the setup and enrollment interface. Actual lock-screen authentication will still require a separately reviewed Gaze daemon/PAM installation and a safe Omarchy integration point. Until those pieces exist, finishing the walkthrough does not change how the computer unlocks.
 
-After installing this repository as an Omarchy plugin, the visual preview can be summoned while the session is unlocked:
+## Run the current AppImage
 
 ```bash
-omarchy-shell shell summon fitzzz.face-unlock '{}'
+chmod +x dist/Omarchy_Face_Unlock-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_Unlock-x86_64.AppImage
 ```
 
-If `omarchy plugin add` prints `omarchy-shell is not responding`, first check:
+`APPIMAGE_EXTRACT_AND_RUN=1` avoids relying on FUSE. The package intentionally uses the Qt 6 libraries already supplied by Omarchy; bundling a second Linux multimedia stack caused loader conflicts during testing.
+
+## Build from source
+
+Requirements: CMake 3.24 or newer, Ninja, a C++20 compiler, and Qt 6.7 or newer with Core, DBus, Gui, Multimedia, Quick, and Quick Controls 2.
 
 ```bash
-omarchy-shell shell ping
-omarchy plugin list
-omarchy-shell face-unlock status
+cmake -S . -B build-native -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-native
+ctest --test-dir build-native --output-on-failure
+./build-native/omarchy-face-unlock
 ```
 
-On the development machine, a full plugin rescan took about five seconds while the command's IPC timeout was two seconds. The message was transient: the plugin loaded, the shell recovered, and the lock remained unlocked. Do not repeat installation if the plugin already appears in the list. Never add, update, or rescan plugins while the session is locked.
+Build the AppImage with:
 
-Do not install or enable this development build on a machine without an out-of-band recovery path. It does not yet modify PAM, but Omarchy currently has an upstream lock-service reload defect that must be resolved before lock-screen testing.
+```bash
+./scripts/build-appimage.sh
+```
 
-## Planned backend
+The script downloads a pinned, checksum-verified linuxdeploy release to obtain `appimagetool`. The resulting x86-64 file is written under `dist/`.
 
-The plugin will integrate with [Gaze](https://github.com/GunduLabs/gaze) for on-device recognition, enrollment, PAM authentication, RGB liveness checks, and supported infrared hardware. It will not implement a second face-recognition engine.
+## Gaze behavior
 
-## Status
+When `com.gundulabs.Gaze` is present on the system bus, the app claims the current user, starts enrollment, receives Gaze's prompts and preview frames, and releases the claim on completion or cancellation. When the service is missing or stops responding, the app reports that enrollment is unavailable and leaves the operating system untouched.
 
-Pre-alpha. Not ready for authentication, PAM changes, or omarchyplugins.com submission.
+The local preview sequence does not perform recognition or liveness detection and does not save biometric data. Those security-sensitive jobs belong to Gaze.
 
-## License
+## Project status
 
-Project code is licensed under GPL-3.0-or-later. The eye design is derived from Lucide icons under the ISC License; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+This is an early development build, not a complete lock-screen authentication product. The remaining system work is intentionally blocked on a narrow Gaze installation method that does not modify unrelated PAM services, followed by recovery-tested Omarchy lock integration. See [the initial build plan](docs/2026-08-28-initial-build.md).
+
+Project code is GPL-3.0-or-later. The Lucide-derived eye geometry is covered by the notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
