@@ -10,6 +10,7 @@ face_receipt="$state_dir/enrolled-face"
 ownership_dir="${OMARCHY_FACE_ID_OWNERSHIP_DIR:-/var/lib/omarchy-face-id}"
 gaze_receipt="$ownership_dir/gaze-installed"
 expected_gaze_receipt='omarchy-face-id:gaze:0.2.12-1'
+expected_gaze_aur_receipt='omarchy-face-id:gaze-aur:gaze-bin'
 assume_yes=0
 
 usage() {
@@ -54,11 +55,15 @@ if [[ ${OMARCHY_FACE_ID_SKIP_LOCK_CHECK:-0} != 1 ]] \
     exit 1
 fi
 
-gaze_owned=0
-if [[ -f $gaze_receipt ]] \
-    && [[ $(<"$gaze_receipt") == "$expected_gaze_receipt" ]]; then
-    gaze_owned=1
+gaze_ownership=none
+if [[ -f $gaze_receipt ]]; then
+    case $(<"$gaze_receipt") in
+        "$expected_gaze_receipt") gaze_ownership=legacy ;;
+        "$expected_gaze_aur_receipt") gaze_ownership=aur ;;
+    esac
 fi
+gaze_owned=0
+[[ $gaze_ownership == none ]] || gaze_owned=1
 
 face_name=""
 if [[ -f $face_receipt ]]; then
@@ -87,7 +92,7 @@ if ((assume_yes == 0)); then
     echo "Face ID and its saved face scan will be removed."
     echo "Your password will not change."
     if ((gaze_owned)); then
-        echo "Gaze will also be removed because Omarchy Face ID installed it."
+        echo "The Gaze package will also be removed because Face ID installed it."
     else
         echo "Your existing Gaze installation will remain installed."
     fi
@@ -117,12 +122,17 @@ if [[ -e $pam_target ]]; then
 fi
 
 if ((gaze_owned)); then
-    if pacman -Q gaze >/dev/null 2>&1; then
+    if [[ $gaze_ownership == aur ]] && command -v gaze >/dev/null 2>&1; then
+        gaze uninstall --yes
+    elif [[ $gaze_ownership == aur ]] && pacman -Q gaze-bin >/dev/null 2>&1; then
+        sudo systemctl disable --now gazed.service >/dev/null 2>&1 || true
+        omarchy pkg drop gaze-bin
+    elif pacman -Q gaze >/dev/null 2>&1; then
         sudo systemctl disable --now gazed.service >/dev/null 2>&1 || true
         sudo pacman -Rns --noconfirm gaze
     fi
-    sudo rm -rf -- /etc/gaze /var/cache/gaze /var/lib/gaze
-    sudo unlink "$gaze_receipt"
+    sudo rm -rf -- /etc/gaze /var/cache/gaze /var/lib/gaze >/dev/null 2>&1 || true
+    sudo unlink "$gaze_receipt" 2>/dev/null || true
     sudo rmdir "$ownership_dir" 2>/dev/null || true
 fi
 

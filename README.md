@@ -21,22 +21,15 @@ The current release implements only setup, enrollment, and lock-screen authentic
 
 ## Current safety boundary
 
-The AppImage handles setup and enrollment. The optional lock integration adds a dedicated face-only PAM service and a small Omarchy service plugin. It does not replace the lock screen, edit Omarchy's password service, or alter the shared system authentication stack.
+The AppImage handles dependency setup, enrollment, and lock integration. Its own subscriber uses a dedicated face-only PAM service and does not replace the lock screen or edit Omarchy's password service. Installing the official `gaze-bin` dependency runs that package's standard Arch installation hook, which currently adds optional face authentication to sudo and may initialize polkit authentication. Both retain password fallback, and Gaze's official uninstaller reverses those changes when the ownership receipt proves this wizard installed the package.
 
 If a later Omarchy update changes the internal lock-service interface, Face ID fails closed: the face attempt stops and the existing password screen continues to work.
 
-## Install Gaze on Omarchy
+## Install on Omarchy
 
-Gaze is an external, user-managed dependency. Install its official AUR packages through Omarchy so normal Omarchy updates can keep them current:
+Send the user only `Omarchy_Face_ID-x86_64.AppImage`. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard AUR installer, and continues automatically after the system password is entered. The AppImage invokes `omarchy pkg aur add gaze-bin`; it does not download, bundle, fork, or privately distribute Gaze. Normal Omarchy updates therefore keep the package current.
 
-```bash
-omarchy pkg aur add gaze-bin gaze-gui-bin
-sudo systemctl enable --now gazed.service
-```
-
-Then run `gaze doctor` and open the AppImage to enroll. This follows both [Gaze's Arch instructions](https://github.com/GunduLabs/gaze#install) and [Omarchy's AUR package workflow](https://learn.omacom.io/books/2/pages/66), rather than distributing a private Gaze build.
-
-The official `gaze-bin` package currently configures Gaze in shared PAM surfaces such as sudo during installation. That behavior belongs to Gaze's package, not this AppImage. Omarchy Face ID itself installs only its dedicated face-only lock service and never edits the password, sudo, polkit, or shared system authentication stacks. Because Gaze is installed separately through Omarchy, removing Omarchy Face ID leaves the user-managed Gaze packages in place.
+If Gaze was already installed, Face ID uses it without claiming ownership. If the wizard installs it, a root-owned receipt records that fact so Face ID's uninstaller can invoke Gaze's official cleanup and remove the package, its PAM additions, configuration, models, and saved biometric data. The official `gaze-bin` package currently enables Gaze in shared PAM surfaces such as sudo while preserving password fallback; the wizard labels the package installation explicitly rather than hiding that system change.
 
 ## Run the current AppImage
 
@@ -45,13 +38,7 @@ chmod +x dist/Omarchy_Face_ID-x86_64.AppImage
 APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Omarchy_Face_ID-x86_64.AppImage
 ```
 
-After saving a face scan, enable the lock-screen subscriber:
-
-```bash
-./scripts/install-lock-integration.sh
-```
-
-Then lock the computer and look directly at the camera. Face ID appears after three seconds. The lock screen shows a moving face, an orange verification sweep, a neutral slate-gray Locked state after a rejected face, and a green Unlocked checkmark before it opens. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
+The wizard enrolls the face and offers to enable the lock-screen subscriber. Then lock the computer and look directly at the camera. Face ID appears after three seconds. While scanning, the lock screen cross-fades through a rotating set of short processing words every two seconds. It shows a neutral slate-gray Locked state after a rejected face and a green Unlocked checkmark before opening. A rejection remains visible for 2.5 seconds before another attempt, while password entry stays available throughout.
 
 ## Uninstall
 

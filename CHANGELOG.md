@@ -15,6 +15,8 @@
 - Refine scan copy, punctuation, and navigation while keeping Back visually quiet.
 - Keep the preview frame fixed between Prepare and Scan and clarify the final lock-screen instruction.
 - Show rejected faces as Locked in a wallpaper-neutral slate gray and wait 2.5 seconds before trying again.
+- Enlarge lock-screen status labels and replace Verifying with synchronized processing words that cross-fade every two seconds.
+- Add Install Gaze Package to the Prepare step using Omarchy's official AUR workflow, then continue setup automatically and preserve ownership-aware uninstall.
 - Continue lock-screen activation after a harmless Omarchy rescan timeout and keep plugin terminology out of user-facing errors.
 
 ## 0.3.0 - 2026-08-28

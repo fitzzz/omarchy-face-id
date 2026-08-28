@@ -20,6 +20,8 @@ class GazeClient final : public QObject
     Q_PROPERTY(bool serviceAvailable READ serviceAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool cameraAvailable READ cameraAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool parallelPreviewAvailable READ parallelPreviewAvailable NOTIFY availabilityChanged)
+    Q_PROPERTY(bool faceSetupInstalling READ faceSetupInstalling NOTIFY faceSetupChanged)
+    Q_PROPERTY(QString faceSetupError READ faceSetupError NOTIFY faceSetupChanged)
     Q_PROPERTY(bool enrolling READ enrolling NOTIFY enrollingChanged)
     Q_PROPERTY(bool enrollmentComplete READ enrollmentComplete NOTIFY enrollmentChanged)
     Q_PROPERTY(int enrollmentProgress READ enrollmentProgress NOTIFY enrollmentChanged)
@@ -50,6 +52,8 @@ public:
     bool serviceAvailable() const;
     bool cameraAvailable() const;
     bool parallelPreviewAvailable() const;
+    bool faceSetupInstalling() const;
+    QString faceSetupError() const;
     bool enrolling() const;
     bool enrollmentComplete() const;
     int enrollmentProgress() const;
@@ -73,12 +77,14 @@ public:
     QColor themeRed() const;
 
     Q_INVOKABLE void refresh();
+    Q_INVOKABLE void installFaceSetup();
     Q_INVOKABLE void beginEnrollment(const QString &faceName);
     Q_INVOKABLE void cancelEnrollment();
     Q_INVOKABLE void enableLockIntegration();
 
 signals:
     void availabilityChanged();
+    void faceSetupChanged();
     void enrollingChanged();
     void enrollmentChanged();
     void previewChanged();
@@ -105,6 +111,7 @@ private:
     void recordEnrollmentOwnership(const QString &faceName);
     bool installUserPlugin(QString *error);
     void finishLockIntegrationInstall(bool authorized);
+    void finishFaceSetup(bool success, const QString &error = {});
     bool startParallelPreview();
     void stopParallelPreview(bool clearFrame = false);
 
@@ -112,6 +119,8 @@ private:
     bool m_serviceAvailable = false;
     bool m_cameraAvailable = false;
     bool m_parallelPreviewAvailable = false;
+    bool m_faceSetupInstalling = false;
+    QString m_faceSetupError;
     bool m_claimed = false;
     bool m_enrolling = false;
     bool m_enrollmentComplete = false;
@@ -131,6 +140,9 @@ private:
     std::atomic<qint64> m_lastPreviewFrameUsec{0};
     QFileSystemWatcher m_themeWatcher;
     QTimer m_themeReloadTimer;
+    QTimer m_faceSetupPollTimer;
+    int m_faceSetupPollCount = 0;
+    QString m_faceSetupStatusPath;
     QString m_themeRoot;
     QColor m_themeBackground = QColor(QStringLiteral("#111c18"));
     QColor m_themeDarkBackground = QColor(QStringLiteral("#0c1512"));

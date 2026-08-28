@@ -2,89 +2,108 @@
 
 set -euo pipefail
 
-gaze_version="0.2.12"
-package_name="gaze-${gaze_version}-1-x86_64.pkg.tar.zst"
-package_url="https://github.com/GunduLabs/gaze/releases/download/v${gaze_version}/${package_name}"
-package_sha256="72312d159ae422d70f50954e994b78484f76104de16249b97a095d5bd1e2e7a5"
 ownership_dir="${OMARCHY_FACE_ID_OWNERSHIP_DIR:-/var/lib/omarchy-face-id}"
 ownership_receipt="$ownership_dir/gaze-installed"
-ownership_value="omarchy-face-id:gaze:${gaze_version}-1"
+ownership_value='omarchy-face-id:gaze-aur:gaze-bin'
+gaze_command="${OMARCHY_FACE_ID_GAZE_COMMAND:-gaze}"
+status_file=""
+self_delete=0
+wizard_mode=0
+
+finish() {
+    local exit_code=$?
+    trap - EXIT
+
+    if [[ -n $status_file ]]; then
+        local status_temp="${status_file}.tmp.$$"
+        if ((exit_code == 0)); then
+            printf '%s\n' success >"$status_temp"
+        else
+            printf '%s\n' failure >"$status_temp"
+        fi
+        mv -f -- "$status_temp" "$status_file"
+    fi
+
+    if ((self_delete)); then
+        rm -f -- "$0"
+    fi
+    exit "$exit_code"
+}
+trap finish EXIT
+
+while (($# > 0)); do
+    case "$1" in
+        --status-file)
+            shift
+            status_file=${1:-}
+            [[ $status_file == /tmp/omarchy-face-id-install.* ]] || {
+                echo "Invalid setup status path." >&2
+                exit 2
+            }
+            ;;
+        --self-delete)
+            self_delete=1
+            ;;
+        --wizard)
+            wizard_mode=1
+            ;;
+        --help | -h)
+            cat <<'EOF'
+Usage: install-gaze-arch.sh [--wizard] [--status-file PATH] [--self-delete]
+
+Install the official Gaze base package through Omarchy's AUR package workflow.
+Run this script as the desktop user; package operations request sudo normally.
+EOF
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
 
 if [[ ${EUID} -eq 0 ]]; then
-    echo "Run this script as your normal user; it will request sudo only for package and service operations." >&2
+    echo "Run this as your normal user; setup requests administrator access when needed." >&2
     exit 1
 fi
 
-for command_name in curl pacman sha256sum sudo systemctl; do
+for command_name in omarchy pacman sudo systemctl; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
-        echo "Missing required command: $command_name" >&2
+        echo "Face ID setup needs '$command_name', but it is unavailable." >&2
         exit 1
     fi
 done
 
-if pacman -Q gaze >/dev/null 2>&1; then
-    echo "Gaze is already installed. Omarchy Face ID will use it but will never remove it."
-    if ! systemctl is-active --quiet gazed.service; then
-        echo "The existing Gaze service is not running. Start it before opening Omarchy Face ID." >&2
-    fi
-    exit 0
+if ((wizard_mode)); then
+    clear 2>/dev/null || true
+    printf '\n  Installing Omarchy Face ID…\n\n'
 fi
 
-if command -v gaze >/dev/null 2>&1; then
-    echo "An unmanaged Gaze installation already exists. It was left unchanged." >&2
-    exit 1
-fi
-
-temporary_dir=$(mktemp -d -t omarchy-face-id-gaze.XXXXXX)
-package_path="$temporary_dir/$package_name"
-before_snapshot="$temporary_dir/pam-before"
-after_snapshot="$temporary_dir/pam-after"
-
-cleanup() {
-    rm -rf -- "$temporary_dir"
-}
-trap cleanup EXIT
-
-snapshot_password_path() {
-    local candidate
-    for candidate in \
-        /etc/pam.d/sudo \
-        /etc/pam.d/polkit-1 \
-        /etc/pam.d/omarchy-lock-password \
-        /etc/pam.d/system-auth; do
-        if [[ -f "$candidate" ]]; then
-            sha256sum "$candidate"
-        else
-            printf 'missing  %s\n' "$candidate"
-        fi
-    done
-}
-
-snapshot_password_path >"$before_snapshot"
-
-echo "Downloading verified Gaze ${gaze_version} package…"
-curl --fail --location --show-error "$package_url" --output "$package_path"
-printf '%s  %s\n' "$package_sha256" "$package_path" | sha256sum --check --status
-
-echo "Installing Gaze without running its PAM-changing package scriptlet…"
-sudo pacman -U --noscriptlet --needed --noconfirm "$package_path"
-
-snapshot_password_path >"$after_snapshot"
-if ! cmp --silent "$before_snapshot" "$after_snapshot"; then
-    echo "A protected PAM file changed unexpectedly. Review the following difference before continuing:" >&2
-    diff --unified "$before_snapshot" "$after_snapshot" >&2 || true
-    exit 1
+installed_by_face_id=0
+if pacman -Q gaze-bin >/dev/null 2>&1; then
+    printf '  Face scanning is already installed.\n'
+elif command -v "$gaze_command" >/dev/null 2>&1; then
+    printf '  An existing face-scanning installation will be used.\n'
+else
+    installed_by_face_id=1
+    omarchy pkg aur add gaze-bin
 fi
 
 sudo systemctl enable --now gazed.service
 
-printf '%s\n' "$ownership_value" >"$temporary_dir/gaze-installed"
-sudo install -d -o root -g root -m 0755 "$ownership_dir"
-sudo install -o root -g root -m 0644 \
-    "$temporary_dir/gaze-installed" "$ownership_receipt"
+if ((installed_by_face_id)); then
+    receipt_temp=$(mktemp -t omarchy-face-id-receipt.XXXXXX)
+    printf '%s\n' "$ownership_value" >"$receipt_temp"
+    sudo install -d -o root -g root -m 0755 "$ownership_dir"
+    sudo install -o root -g root -m 0644 "$receipt_temp" "$ownership_receipt"
+    rm -f -- "$receipt_temp"
+fi
 
-echo
-echo "Gaze ${gaze_version} is installed and gazed.service is running."
-echo "The installation receipt records that Omarchy Face ID owns this Gaze installation."
-echo "Protected password, sudo, and polkit PAM files were unchanged."
-echo "Run 'gaze doctor' for diagnostics, then use Omarchy Face ID to enroll."
+if ((wizard_mode)); then
+    printf '\n  ✓ Face ID is ready. Returning to setup…\n'
+    sleep 1
+else
+    printf 'Face ID system setup is complete.\n'
+fi

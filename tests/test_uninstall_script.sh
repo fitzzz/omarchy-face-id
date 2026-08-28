@@ -8,15 +8,17 @@ script="$project_root/scripts/uninstall.sh"
 bash -n "$script"
 grep -Fq 'gaze remove-face "$face_name" --user "$account_name"' "$script"
 grep -Fq 'omarchy plugin remove "$plugin_id" --yes' "$script"
-grep -Fq '[[ $(<"$gaze_receipt") == "$expected_gaze_receipt" ]]' "$script"
+grep -Fq '"$expected_gaze_receipt") gaze_ownership=legacy' "$script"
+grep -Fq '"$expected_gaze_aur_receipt") gaze_ownership=aur' "$script"
 grep -Fq 'sudo pacman -Rns --noconfirm gaze' "$script"
+grep -Fq 'gaze uninstall --yes' "$script"
 grep -Fq 'Your password will not change.' "$script"
 
 owned_line=$(grep -n 'if ((gaze_owned)); then' "$script" | tail -1 | cut -d: -f1)
 package_line=$(grep -n 'sudo pacman -Rns --noconfirm gaze' "$script" | cut -d: -f1)
 [[ $package_line -gt $owned_line ]]
 
-if rg -q 'gaze (clear-user|uninstall)' "$script"; then
+if rg -q 'gaze clear-user' "$script"; then
     echo "The uninstaller must remove only this app's named face from shared Gaze installs." >&2
     exit 1
 fi
@@ -58,6 +60,9 @@ EOF
     if [[ $mode == owned ]]; then
         printf '%s\n' 'omarchy-face-id:gaze:0.2.12-1' \
             >"$sandbox/ownership/gaze-installed"
+    elif [[ $mode == aur_owned ]]; then
+        printf '%s\n' 'omarchy-face-id:gaze-aur:gaze-bin' \
+            >"$sandbox/ownership/gaze-installed"
     fi
 
     TEST_LOG="$sandbox/actions.log" \
@@ -88,3 +93,6 @@ grep -Fq 'sudo systemctl disable --now gazed.service' \
 grep -Fq 'sudo pacman -Rns --noconfirm gaze' "$temporary_dir/owned/actions.log"
 grep -Fq 'sudo rm -rf -- /etc/gaze /var/cache/gaze /var/lib/gaze' \
     "$temporary_dir/owned/actions.log"
+
+run_case aur_owned
+grep -Fq 'gaze uninstall --yes' "$temporary_dir/aur_owned/actions.log"

@@ -133,6 +133,34 @@ GazeClient::GazeClient(QObject *parent)
             this, &GazeClient::scheduleThemeReload);
     connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged,
             this, &GazeClient::scheduleThemeReload);
+    m_faceSetupPollTimer.setInterval(1000);
+    connect(&m_faceSetupPollTimer, &QTimer::timeout, this, [this] {
+        ++m_faceSetupPollCount;
+
+        QFile status(m_faceSetupStatusPath);
+        if (status.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            const QString result = QString::fromUtf8(status.readAll()).trimmed();
+            if (result == QStringLiteral("failure")) {
+                finishFaceSetup(
+                    false,
+                    QStringLiteral("The Gaze package was not installed. Try again."));
+                return;
+            }
+            if (result == QStringLiteral("success")) {
+                refresh();
+                if (m_installed && m_serviceAvailable) {
+                    finishFaceSetup(true);
+                    return;
+                }
+            }
+        }
+
+        if (m_faceSetupPollCount >= 300) {
+            finishFaceSetup(
+                false,
+                QStringLiteral("Setup took too long. Check the installer and try again."));
+        }
+    });
     reloadTheme();
     refreshLockIntegrationStatus();
 
@@ -160,6 +188,8 @@ GazeClient::GazeClient(QObject *parent)
 
 GazeClient::~GazeClient()
 {
+    if (!m_faceSetupInstalling && !m_faceSetupStatusPath.isEmpty())
+        QFile::remove(m_faceSetupStatusPath);
     stopParallelPreview();
     releaseClaim();
 }
@@ -168,6 +198,8 @@ bool GazeClient::installed() const { return m_installed; }
 bool GazeClient::serviceAvailable() const { return m_serviceAvailable; }
 bool GazeClient::cameraAvailable() const { return m_cameraAvailable; }
 bool GazeClient::parallelPreviewAvailable() const { return m_parallelPreviewAvailable; }
+bool GazeClient::faceSetupInstalling() const { return m_faceSetupInstalling; }
+QString GazeClient::faceSetupError() const { return m_faceSetupError; }
 bool GazeClient::enrolling() const { return m_enrolling; }
 bool GazeClient::enrollmentComplete() const { return m_enrollmentComplete; }
 int GazeClient::enrollmentProgress() const { return m_enrollmentProgress; }
@@ -197,7 +229,8 @@ void GazeClient::refresh()
     const bool wasCameraAvailable = m_cameraAvailable;
     const bool wasParallelPreviewAvailable = m_parallelPreviewAvailable;
 
-    m_installed = QFileInfo(QStringLiteral("/usr/bin/gaze")).isExecutable();
+    m_installed = QFileInfo(qEnvironmentVariable(
+        "OMARCHY_FACE_ID_GAZE_PATH", QStringLiteral("/usr/bin/gaze"))).isExecutable();
     auto *busInterface = QDBusConnection::systemBus().interface();
     const QDBusReply<bool> registered = busInterface
         ? busInterface->isServiceRegistered(QString::fromLatin1(serviceName))
@@ -222,6 +255,96 @@ void GazeClient::refresh()
         || wasCameraAvailable != m_cameraAvailable
         || wasParallelPreviewAvailable != m_parallelPreviewAvailable)
         emit availabilityChanged();
+}
+
+void GazeClient::installFaceSetup()
+{
+    if (m_faceSetupInstalling)
+        return;
+
+    refresh();
+    if (m_installed && m_serviceAvailable) {
+        m_faceSetupError.clear();
+        emit faceSetupChanged();
+        return;
+    }
+
+    const QString terminalLauncher = QStandardPaths::findExecutable(
+        QStringLiteral("omarchy-launch-terminal"));
+    const QByteArray installerContents = resourceContents(
+        QStringLiteral(":/scripts/install-gaze-arch.sh"));
+    if (terminalLauncher.isEmpty() || installerContents.isEmpty()) {
+        m_faceSetupError = QStringLiteral("The Gaze package installer is unavailable.");
+        emit faceSetupChanged();
+        return;
+    }
+
+    QTemporaryFile installer(
+        QDir::tempPath() + QStringLiteral("/omarchy-face-id-installer.XXXXXX"));
+    installer.setAutoRemove(false);
+    if (!installer.open()
+        || installer.write(installerContents) != installerContents.size()
+        || !installer.flush()) {
+        m_faceSetupError = QStringLiteral("Could not prepare the Gaze package installer.");
+        emit faceSetupChanged();
+        return;
+    }
+    const QString installerPath = installer.fileName();
+    installer.close();
+    QFile::setPermissions(
+        installerPath,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+
+    QTemporaryFile status(
+        QDir::tempPath() + QStringLiteral("/omarchy-face-id-install.XXXXXX"));
+    status.setAutoRemove(false);
+    if (!status.open()) {
+        QFile::remove(installerPath);
+        m_faceSetupError = QStringLiteral("Could not start Gaze package setup.");
+        emit faceSetupChanged();
+        return;
+    }
+    m_faceSetupStatusPath = status.fileName();
+    status.close();
+    QFile::remove(m_faceSetupStatusPath);
+
+    qint64 installerPid = 0;
+    const bool launched = QProcess::startDetached(
+        terminalLauncher,
+        {QStringLiteral("/usr/bin/bash"),
+         installerPath,
+         QStringLiteral("--wizard"),
+         QStringLiteral("--status-file"), m_faceSetupStatusPath,
+         QStringLiteral("--self-delete")},
+        QString(),
+        &installerPid);
+    if (!launched) {
+        QFile::remove(installerPath);
+        m_faceSetupStatusPath.clear();
+        m_faceSetupError = QStringLiteral("Could not open the Gaze package installer.");
+        emit faceSetupChanged();
+        return;
+    }
+
+    m_faceSetupPollCount = 0;
+    m_faceSetupError.clear();
+    m_faceSetupInstalling = true;
+    m_faceSetupPollTimer.start();
+    emit faceSetupChanged();
+}
+
+void GazeClient::finishFaceSetup(bool success, const QString &error)
+{
+    m_faceSetupPollTimer.stop();
+    if (!m_faceSetupStatusPath.isEmpty())
+        QFile::remove(m_faceSetupStatusPath);
+    m_faceSetupStatusPath.clear();
+    m_faceSetupPollCount = 0;
+    m_faceSetupInstalling = false;
+    m_faceSetupError = success ? QString() : error;
+    if (success)
+        refresh();
+    emit faceSetupChanged();
 }
 
 void GazeClient::beginEnrollment(const QString &faceName)

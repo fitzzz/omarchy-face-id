@@ -21,6 +21,35 @@ Item {
     property string status: "unavailable"
     property bool overlayPreviewVisible: false
     property string overlayPreviewState: "checking"
+    property int verifyingWordIndex: -1
+    property string verifyingWord: "EXTRAPOLATING"
+    property real verifyingWordOpacity: 0.9
+
+    readonly property var verifyingWords: [
+        "EXTRAPOLATING",
+        "SYNTHESIZING",
+        "DISAMBIGUATING",
+        "ITERATING",
+        "SIFTING",
+        "HALLUCINATING",
+        "DRIFTING",
+        "DISTILLING",
+        "RECONCILING",
+        "CORRELATING",
+        "CALIBRATING",
+        "AGGREGATING",
+        "CONDENSING",
+        "PARAPHRASING",
+        "MODULATING",
+        "CONTEXTUALIZING",
+        "ANCHORING",
+        "MIRRORING",
+        "ECHOING",
+        "PRUNING",
+        "SCORING",
+        "REFINING",
+        "CONVERGING"
+    ]
 
     readonly property string overlayState: overlayPreviewVisible ? overlayPreviewState : status
     readonly property bool overlayVisible: overlayPreviewVisible || (lockService
@@ -44,6 +73,23 @@ Item {
 
         var next = shell.serviceFor("omarchy.lock")
         if (next !== lockService) lockService = next
+    }
+
+    function chooseVerifyingWord() {
+        if (verifyingWords.length === 0) return
+
+        var nextIndex = Math.floor(Math.random() * verifyingWords.length)
+        if (nextIndex === verifyingWordIndex && verifyingWords.length > 1)
+            nextIndex = (nextIndex + 1) % verifyingWords.length
+
+        verifyingWordIndex = nextIndex
+        verifyingWord = verifyingWords[nextIndex]
+    }
+
+    onOverlayStateChanged: {
+        verifyingWordTransition.stop()
+        verifyingWordOpacity = 0.9
+        if (overlayState === "checking") chooseVerifyingWord()
     }
 
     function beginLockGeneration() {
@@ -275,6 +321,34 @@ Item {
         onTriggered: root.overlayPreviewVisible = false
     }
 
+    Timer {
+        id: verifyingWordTimer
+        interval: 2000
+        repeat: true
+        running: root.overlayVisible && root.overlayState === "checking"
+        onTriggered: verifyingWordTransition.restart()
+    }
+
+    SequentialAnimation {
+        id: verifyingWordTransition
+
+        NumberAnimation {
+            target: root
+            property: "verifyingWordOpacity"
+            to: 0
+            duration: 220
+            easing.type: Easing.InOutCubic
+        }
+        ScriptAction { script: root.chooseVerifyingWord() }
+        NumberAnimation {
+            target: root
+            property: "verifyingWordOpacity"
+            to: 0.9
+            duration: 280
+            easing.type: Easing.OutCubic
+        }
+    }
+
     // Hyprland renders this namespace above the session lock but leaves it
     // non-interactive. Failure here affects only the visual; PAM and the
     // first-party password field continue independently.
@@ -469,14 +543,14 @@ Item {
                     y: 212
                     text: indicator.success ? "UNLOCKED"
                         : indicator.unauthorized ? "LOCKED"
-                        : indicator.checking ? "VERIFYING" : "LOOK AT THE CAMERA"
+                        : indicator.checking ? root.verifyingWord : "LOOK AT THE CAMERA"
                     color: indicator.unauthorized ? indicator.lockedColor
                         : indicator.success ? "#65d1a7" : Color.lock.text
                     font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Math.max(16, Style.font.caption + 3)
                     font.bold: true
                     font.letterSpacing: 1.8
-                    opacity: 0.9
+                    opacity: indicator.checking ? root.verifyingWordOpacity : 0.9
                 }
 
                 Timer {

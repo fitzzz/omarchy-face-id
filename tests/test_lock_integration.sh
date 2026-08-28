@@ -22,6 +22,19 @@ grep -Fq 'text: indicator.success ? "UNLOCKED"' "$service"
 grep -Fq ': indicator.unauthorized ? "LOCKED"' "$service"
 grep -Fq 'readonly property color lockedColor: "#4b5563"' "$service"
 grep -Fq ': unauthorized ? lockedColor' "$service"
+grep -Fq 'readonly property var verifyingWords' "$service"
+grep -Fq '"EXTRAPOLATING"' "$service"
+grep -Fq '"SYNTHESIZING"' "$service"
+grep -Fq '"DISAMBIGUATING"' "$service"
+grep -Fq '"HALLUCINATING"' "$service"
+grep -Fq 'id: verifyingWordTimer' "$service"
+grep -Fq 'interval: 2000' "$service"
+grep -Fq 'id: verifyingWordTransition' "$service"
+grep -Fq 'font.pixelSize: Math.max(16, Style.font.caption + 3)' "$service"
+if rg -q 'STRUCTURING|DEGRADING|TRUNCATING|VALIDATING' "$service"; then
+    echo "Excluded lock-screen status words must not be present." >&2
+    exit 1
+fi
 grep -Fq 'id: keepAwakeTimer' "$service"
 grep -Fq 'interval: 3000' "$service"
 grep -Fq 'typeof lockService.runWake === "function"' "$service"

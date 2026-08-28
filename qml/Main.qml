@@ -76,20 +76,26 @@ ApplicationWindow {
     }
 
     function readinessTitle() {
+        if (gazeClient.faceSetupInstalling)
+            return "Installing Gaze Package…"
         if (gazeReady)
             return "Camera Ready"
         if (!gazeClient.installed)
-            return "Setup Required"
+            return "One Quick Setup"
         if (!gazeClient.serviceAvailable)
             return "Face Scanning Is Offline"
         return "Camera Unavailable"
     }
 
     function readinessDetail() {
+        if (gazeClient.faceSetupInstalling)
+            return "Enter your system password in the installer. This page will continue automatically."
+        if (gazeClient.faceSetupError.length > 0)
+            return gazeClient.faceSetupError
         if (gazeReady)
             return "Video is processed locally and is never saved."
         if (!gazeClient.installed)
-            return "Install Gaze through Omarchy, then check again."
+            return "Installs the official Gaze package, which may also add face approval to sudo. Your password continues to work."
         if (!gazeClient.serviceAvailable)
             return "Start the face-scanning service, then check again."
         return "Close other camera apps, then check again."
@@ -372,7 +378,9 @@ ApplicationWindow {
                             radius: 12
                             color: root.surfaceColor
                             border.width: 1
-                            border.color: root.gazeReady ? root.accentColor : root.errorColor
+                            border.color: gazeClient.faceSetupInstalling
+                                ? root.amberColor
+                                : root.gazeReady ? root.accentColor : root.errorColor
 
                             ColumnLayout {
                                 anchors.centerIn: parent
@@ -381,7 +389,9 @@ ApplicationWindow {
                                     Layout.alignment: Qt.AlignHCenter
                                     Layout.preferredWidth: 196
                                     Layout.preferredHeight: 196
-                                    state: root.gazeReady ? "idle" : "unavailable"
+                                    state: gazeClient.faceSetupInstalling
+                                        ? "checking"
+                                        : root.gazeReady ? "idle" : "unavailable"
                                     backgroundColor: root.surfaceColor
                                     primaryColor: root.accentColor
                                     checkingColor: root.amberColor
@@ -418,13 +428,26 @@ ApplicationWindow {
                             Item { Layout.fillWidth: true }
                             ThemedActionButton {
                                 text: "Check Again"
-                                visible: !root.gazeReady
+                                visible: gazeClient.installed
+                                    && gazeClient.serviceAvailable
+                                    && !gazeClient.cameraAvailable
                                 onClicked: gazeClient.refresh()
+                            }
+                            ThemedActionButton {
+                                text: gazeClient.faceSetupInstalling
+                                    ? "Installing…" : "Install Gaze Package"
+                                visible: !gazeClient.installed
+                                    || !gazeClient.serviceAvailable
+                                primary: true
+                                enabled: !gazeClient.faceSetupInstalling
+                                onClicked: gazeClient.installFaceSetup()
                             }
                             ThemedActionButton {
                                 text: "Authorize and Scan Face"
                                 primary: true
                                 forwardIcon: true
+                                visible: gazeClient.installed
+                                    && gazeClient.serviceAvailable
                                 enabled: root.gazeReady
                                 onClicked: root.startEnrollment()
                             }

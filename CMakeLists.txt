@@ -51,6 +51,7 @@ qt_add_resources(omarchy-face-id "face_id_integration"
         integration/omarchy-plugin/Service.qml
         integration/omarchy-plugin/manifest.json
         packaging/pam/omarchy-face-id-lock
+        scripts/install-gaze-arch.sh
         scripts/uninstall.sh
 )
 

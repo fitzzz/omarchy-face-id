@@ -13,7 +13,7 @@ The experience uses a friendly face avatar surrounded by 72 radial scan marks. T
 
 ## What the AppImage can and cannot solve
 
-The AppImage solves distribution of the setup interface, diagnostics, guided enrollment, and explicit subscriber activation. It does not make a sandboxed application into a system authenticator. Each subscriber still requires a trusted, user-managed Gaze installation, its PAM module, and a narrow connection to that subscriber's authentication lifecycle. On Omarchy, Gaze follows its official `gaze-bin`/`gaze-gui-bin` AUR packaging and remains updateable through Omarchy rather than being privately distributed by this project.
+The AppImage solves distribution of dependency setup, diagnostics, guided enrollment, and explicit subscriber activation. It does not make a sandboxed application into a system authenticator. Each subscriber still requires a trusted Gaze installation, its PAM module, and a narrow connection to that subscriber's authentication lifecycle. On Omarchy, the wizard installs the official `gaze-bin` AUR package through Omarchy and leaves it updateable by the operating system rather than privately distributing it.
 
 This creates two layers:
 
@@ -25,8 +25,8 @@ This creates two layers:
 - Password unlock remains visible, focused, and independently usable.
 - Face authentication is an optional success path, never a requirement.
 - A face mismatch, camera failure, timeout, daemon crash, missing model, update incompatibility, or app removal leaves password authentication unchanged.
-- The setup app never edits stock Omarchy files or shared PAM stacks.
-- The setup app never runs Gaze's Arch package scriptlet because it automatically changes sudo and polkit authentication. The repository's installer uses pacman's `--noscriptlet` protection and verifies those PAM files remain unchanged.
+- The setup app never edits stock Omarchy files or shared PAM stacks itself.
+- **Install Gaze Package** explicitly invokes the official AUR package and its standard Arch scriptlet. That upstream scriptlet may add optional Gaze authentication to sudo and initialize polkit while retaining password fallback. If this wizard installed the package, uninstall delegates to Gaze's official cleanup to reverse those additions.
 - Lock-screen integration will use a dedicated face-only PAM service. It will not include `system-auth`, `pam_unix`, `pam_faillock`, sudo, or polkit.
 - The project does not clone, replace, or edit Omarchy's lock screen. The compatibility plugin checks for the required lock-service method at runtime and stays inactive if an update removes it.
 - Testing of real authentication begins in a disposable account or virtual machine with an out-of-band recovery route, not on the user's only login path.
@@ -34,17 +34,19 @@ This creates two layers:
 ## Implemented application flow
 
 1. **Welcome:** introduces Face ID and states explicitly that face matching, liveness checks, and biometric data remain local.
-2. **Prepare:** helps the user get ready for the scan and presents one human-readable camera state. Package, daemon, and device details stay out of the primary journey.
+2. **Prepare:** helps the user get ready for the scan and presents one human-readable camera state. When the official system dependency is missing, this step offers **Install Gaze Package**, opens Omarchy's standard AUR installation flow, and advances automatically when it finishes.
 3. **Scan:** requests enrollment authorization and immediately begins the guided capture. A live preview sits behind the radial face guide. Each straight, up, down, left, and right instruction waits one second and cross-fades in place before capture can naturally progress, then the guide becomes a checkmark.
 4. **Done:** offers **Enable Face ID**. This is the only step that requests system authorization for the dedicated lock service and Omarchy plugin. Once enabled, it confirms that Face ID is ready.
 
 The main flow never exposes binary paths, service names, PAM terminology, embeddings, or diagnostic dashboards. When readiness fails, it gives one plain-language recovery action. Technical diagnostics remain available through `gaze doctor` outside the wizard.
 
-Closing or cancelling the application stops the walkthrough and releases its Gaze claim. Opening it never changes PAM or Omarchy configuration; only the final, explicit enablement action does.
+Closing or cancelling the application stops the walkthrough and releases its Gaze claim. Opening it alone changes nothing. Only the explicit **Install Gaze Package** and final **Enable Face ID** actions make system changes.
 
 ## Gaze integration boundary
 
-The client uses Gaze's system D-Bus service:
+The client installs the official `gaze-bin` package only when needed by invoking Omarchy's standard `omarchy pkg aur add` flow in a terminal, where Linux can request the system password normally. It never runs an AUR helper as root or ships a private Gaze package. A completion file lets the wizard distinguish success, failure, and timeout without guessing from process timing. A root-owned ownership receipt ensures uninstall removes Gaze only when this wizard originally added it.
+
+The client then uses Gaze's system D-Bus service:
 
 - service and interface: `com.gundulabs.Gaze`
 - object: `/com/gundulabs/Gaze`
@@ -68,7 +70,7 @@ The build script pins and verifies linuxdeploy, extracts its `appimagetool`, bui
 - Generation checks reject stale results from a previous lock or cancelled attempt.
 - Only `PamResult.Success` from the current face attempt may call the existing lock service's `finishUnlock()` method. A 650 ms completion hold makes the verified checkmark visible first.
 - Missing PAM, Gaze failure, camera failure, plugin failure, or an incompatible Omarchy update leaves the ordinary password path unchanged.
-- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep while verifying, a neutral slate-gray Locked state for 2.5 seconds after a rejected face, and a green Unlocked checkmark on success.
+- A separate, click-through layer-shell surface shows a glancing face while waiting, an orange radial sweep with synchronized processing words that cross-fade every two seconds while verifying, a neutral slate-gray Locked state for 2.5 seconds after a rejected face, and a green Unlocked checkmark on success.
 - Hyprland's non-interactive `above_lock = 1` rule lets that surface render over the session lock without receiving keyboard or pointer input. The overlay does not exclude the display from screenshots and disappears outside the active Face ID states.
 
 Omarchy 4.0 does not expose a supported visual slot *inside* its secure lock surface. The compatibility plugin therefore renders the status as a separate compositor layer and never patches a system QML file. If Hyprland removes or changes `above_lock`, only the visual disappears; face authentication and the first-party password screen keep their independent paths.
