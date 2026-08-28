@@ -8,6 +8,17 @@ if [[ ${0##*/} == "pkexec" ]]; then
 
     printf 'authorization-started\n' >> "$trace"
 
+    case ${OMARCHY_FACE_ID_TEST_MODE:-success} in
+        hang)
+            sleep 10
+            exit 1
+            ;;
+        denied)
+            printf 'authorization-denied\n' >> "$trace"
+            exit 126
+            ;;
+    esac
+
     if [[ -e $plugin_dir ]]; then
         printf 'plugin-present-too-early\n' >> "$trace"
         echo "Omarchy plugin was written before authorization completed" >&2
@@ -23,6 +34,10 @@ if [[ ${0##*/} == "pkexec" ]]; then
     # This test fixture runs unprivileged, so emulate pkexec without chown.
     "$1" -m "$7" "$8" "$9"
     printf 'authorization-finished\n' >> "$trace"
+
+    if [[ ${OMARCHY_FACE_ID_TEST_MODE:-success} == nonzero-installed ]]; then
+        exit 1
+    fi
 else
     [[ ${1:-} == "fitzzz.face-id" ]]
 
@@ -36,10 +51,13 @@ else
     attempt=$((attempt + 1))
     printf '%s\n' "$attempt" > "$attempt_file"
 
-    # A watched plugin directory reloads asynchronously. Reproduce the real
-    # interval where Omarchy has the files but does not know the plugin yet.
-    if ((attempt < 3)); then
+    if [[ ! -f $config_dir/rescan-complete ]]; then
+        echo "plugin 'fitzzz.face-id' is not known" >&2
         exit 1
+    fi
+
+    if [[ ${OMARCHY_FACE_ID_TEST_MODE:-success} == crash-once && $attempt -eq 1 ]]; then
+        kill -SEGV $$
     fi
 
     printf '%s\n' '{"version":1,"plugins":[{"id":"fitzzz.face-id"}]}' \

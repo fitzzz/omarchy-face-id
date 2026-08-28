@@ -9,6 +9,9 @@ main_qml="$project_dir/qml/Main.qml"
 # PipeWire RGB camera. Use a second PipeWire stream, never Qt Multimedia's
 # exclusive FFmpeg/V4L2 camera path, for the local preview.
 grep -Fq 'pipewiresrc do-timestamp=true' "$project_dir/app/GazeClient.cpp"
+grep -Fq 'video/x-raw,pixel-aspect-ratio=1/1; image/jpeg' \
+    "$project_dir/app/GazeClient.cpp"
+grep -Fq 'decodebin' "$project_dir/app/GazeClient.cpp"
 grep -Fq 'startParallelPreview()' "$project_dir/app/GazeClient.cpp"
 grep -Fq 'gazeClient.previewDataUrl.length > 0' "$main_qml"
 grep -Fq 'retainWhileLoading: true' "$main_qml"
@@ -17,8 +20,12 @@ if grep -Eq 'QtMultimedia|VideoOutput \{|Camera \{' "$main_qml"; then
     echo "The exclusive Qt Multimedia camera path is still present." >&2
     exit 1
 fi
-grep -Fq 'interval: 1000' "$main_qml"
 grep -Fq 'id: promptTransition' "$main_qml"
+if grep -Fq 'id: promptDelay' "$main_qml"; then
+    echo "Enrollment instructions still lag behind Gaze's active pose." >&2
+    exit 1
+fi
+grep -Fq 'root.displayedPrompt = "Scan complete."' "$main_qml"
 grep -Fq 'id: prepareLayout' "$main_qml"
 grep -Fq 'id: prepareTitleGap' "$main_qml"
 grep -Fq 'border.color: root.accentColor' "$main_qml"

@@ -8,6 +8,7 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusReply>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -162,6 +163,17 @@ GazeClient::GazeClient(QObject *parent)
                 false,
                 QStringLiteral("Setup took too long. Check the installer and try again."));
         }
+    });
+    m_lockActivationDeadline.setSingleShot(true);
+    connect(&m_lockActivationDeadline, &QTimer::timeout, this, [this] {
+        if (m_lockActivationPhase == LockActivationPhase::Idle)
+            return;
+        refreshLockIntegrationStatus();
+        finishLockActivation(
+            m_lockIntegrationInstalled,
+            m_lockIntegrationInstalled
+                ? QString()
+                : QStringLiteral("Face ID setup timed out. Nothing changed; try again."));
     });
     reloadTheme();
     refreshLockIntegrationStatus();
@@ -445,6 +457,7 @@ void GazeClient::enableLockIntegration()
         return;
 
     m_lockIntegrationError.clear();
+    m_lockPluginDiscoveryPasses = 0;
     const QByteArray pamContents = resourceContents(
         QStringLiteral(":/packaging/pam/omarchy-face-id-lock"));
     if (pamContents.isEmpty()) {
@@ -462,9 +475,13 @@ void GazeClient::enableLockIntegration()
             emit lockIntegrationChanged();
             return;
         }
+        const int configuredTimeout = qEnvironmentVariableIntValue(
+            "OMARCHY_FACE_ID_ACTIVATION_TIMEOUT_MS");
+        m_lockActivationDeadline.start(configuredTimeout > 0 ? configuredTimeout : 90000);
         m_lockIntegrationInstalling = true;
+        m_lockActivationPhase = LockActivationPhase::Authorizing;
         emit lockIntegrationChanged();
-        finishLockIntegrationInstall(true);
+        continueLockIntegrationInstall();
         return;
     }
 
@@ -488,29 +505,41 @@ void GazeClient::enableLockIntegration()
     }
     m_lockIntegrationPamFile->close();
 
-    QString authorizationError;
-    if (!holdGazeForPasswordAuthorization(&authorizationError)) {
-        m_lockIntegrationError = authorizationError;
-        delete m_lockIntegrationPamFile;
-        m_lockIntegrationPamFile = nullptr;
-        emit lockIntegrationChanged();
-        return;
-    }
-
+    const int configuredTimeout = qEnvironmentVariableIntValue(
+        "OMARCHY_FACE_ID_ACTIVATION_TIMEOUT_MS");
+    m_lockActivationDeadline.start(configuredTimeout > 0 ? configuredTimeout : 90000);
     m_lockIntegrationInstalling = true;
+    m_lockActivationPhase = LockActivationPhase::Authorizing;
     emit lockIntegrationChanged();
 
-    m_lockIntegrationProcess = new QProcess(this);
-    connect(m_lockIntegrationProcess,
+    auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    m_lockIntegrationProcess = process;
+    connect(process,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this,
-            [this](int exitCode, QProcess::ExitStatus exitStatus) {
-                finishLockIntegrationInstall(
-                    exitStatus == QProcess::NormalExit && exitCode == 0);
-            });
-    connect(m_lockIntegrationProcess, &QProcess::errorOccurred, this,
-            [this](QProcess::ProcessError) { finishLockIntegrationInstall(false); });
-    m_lockIntegrationProcess->start(
+            [this, process](int, QProcess::ExitStatus) {
+                if (m_lockIntegrationProcess != process
+                    || m_lockActivationPhase != LockActivationPhase::Authorizing)
+                    return;
+                const QByteArray diagnostic = process->readAll();
+                if (!diagnostic.isEmpty())
+                    qWarning().noquote() << QString::fromLocal8Bit(diagnostic).trimmed();
+                m_lockIntegrationProcess = nullptr;
+                process->deleteLater();
+                continueLockIntegrationInstall();
+            },
+            Qt::SingleShotConnection);
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process](QProcess::ProcessError) {
+                if (m_lockIntegrationProcess != process
+                    || m_lockActivationPhase != LockActivationPhase::Authorizing)
+                    return;
+                abandonProcess(m_lockIntegrationProcess);
+                continueLockIntegrationInstall();
+            },
+            Qt::SingleShotConnection);
+    process->start(
         pkexec,
         {QStringLiteral("/usr/bin/install"),
          QStringLiteral("-o"), QStringLiteral("root"),
@@ -521,6 +550,21 @@ void GazeClient::enableLockIntegration()
 
 void GazeClient::refreshLockIntegrationStatus()
 {
+    const bool installed = lockIntegrationStateMatches();
+
+    if (installed != m_lockIntegrationInstalled) {
+        m_lockIntegrationInstalled = installed;
+        emit lockIntegrationChanged();
+    }
+
+    // Version 0.3.0 predates enrollment receipts and always used "default".
+    // A matching installed subscriber is sufficient evidence to migrate it.
+    if (installed && !QFileInfo::exists(enrollmentReceiptPath()))
+        recordEnrollmentOwnership(QStringLiteral("default"));
+}
+
+bool GazeClient::lockIntegrationStateMatches() const
+{
     const QString configRoot = qEnvironmentVariable(
         "OMARCHY_FACE_ID_CONFIG_ROOT",
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
@@ -529,7 +573,7 @@ void GazeClient::refreshLockIntegrationStatus()
     const QString configuredPamPath = qEnvironmentVariable(
         "OMARCHY_FACE_ID_PAM_PATH", QString::fromLatin1(facePamPath));
 
-    const bool installed = fileMatches(
+    return fileMatches(
         configuredPamPath,
         resourceContents(QStringLiteral(":/packaging/pam/omarchy-face-id-lock")))
         && fileMatches(
@@ -542,16 +586,6 @@ void GazeClient::refreshLockIntegrationStatus()
             pluginRoot + QStringLiteral("/ding.mp3"),
             resourceContents(QStringLiteral(":/assets/ding.mp3")))
         && pluginEnabled(configRoot);
-
-    if (installed != m_lockIntegrationInstalled) {
-        m_lockIntegrationInstalled = installed;
-        emit lockIntegrationChanged();
-    }
-
-    // Version 0.3.0 predates enrollment receipts and always used "default".
-    // A matching installed subscriber is sufficient evidence to migrate it.
-    if (installed && !QFileInfo::exists(enrollmentReceiptPath()))
-        recordEnrollmentOwnership(QStringLiteral("default"));
 }
 
 void GazeClient::recordEnrollmentOwnership(const QString &faceName)
@@ -623,61 +657,24 @@ bool GazeClient::installUserPlugin(QString *error)
             pluginRoot + QStringLiteral("/ding.mp3"));
 }
 
-bool GazeClient::holdGazeForPasswordAuthorization(QString *error)
+void GazeClient::continueLockIntegrationInstall()
 {
-    if (qEnvironmentVariableIntValue(
-            "OMARCHY_FACE_ID_SKIP_GAZE_AUTH_HOLD") == 1)
-        return true;
-    if (!m_serviceAvailable || m_claimed)
-        return true;
-
-    const passwd *account = getpwuid(getuid());
-    const QString username = account && account->pw_name
-        ? QString::fromLocal8Bit(account->pw_name)
-        : QString();
-    if (username.isEmpty()) {
-        *error = QStringLiteral("Could not prepare password authorization.");
-        return false;
-    }
-
-    // gaze-bin may add pam_gaze to Polkit. Reserve the daemon during this one
-    // setup authorization so pam_gaze falls through to the password stack
-    // instead of dismissing the password dialog while the user is typing.
-    auto iface = gazeInterface();
-    const QDBusReply<void> claimReply = iface.call(QStringLiteral("Claim"), username);
-    if (!claimReply.isValid()) {
-        *error = QStringLiteral(
-            "Face ID is busy. Close other face-authentication prompts and try again.");
-        return false;
-    }
-
-    m_claimed = true;
-    return true;
-}
-
-void GazeClient::finishLockIntegrationInstall(bool authorized)
-{
-    if (!m_lockIntegrationInstalling && !m_lockIntegrationProcess)
+    if (!m_lockIntegrationInstalling
+        || m_lockActivationPhase != LockActivationPhase::Authorizing)
         return;
 
-    // The privileged request has ended. Restore Gaze before activating the
-    // lock subscriber so subsequent Face ID operations work normally.
-    releaseClaim();
-
-    if (m_lockIntegrationProcess) {
-        m_lockIntegrationProcess->deleteLater();
-        m_lockIntegrationProcess = nullptr;
-    }
     if (m_lockIntegrationPamFile) {
         delete m_lockIntegrationPamFile;
         m_lockIntegrationPamFile = nullptr;
     }
 
-    if (!authorized) {
-        m_lockIntegrationInstalling = false;
-        m_lockIntegrationError = QStringLiteral(
-            "Face ID wasn’t enabled. Nothing changed.");
-        emit lockIntegrationChanged();
+    const QByteArray pamContents = resourceContents(
+        QStringLiteral(":/packaging/pam/omarchy-face-id-lock"));
+    const QString configuredPamPath = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_PAM_PATH", QString::fromLatin1(facePamPath));
+    if (!fileMatches(configuredPamPath, pamContents)) {
+        finishLockActivation(false,
+                             QStringLiteral("Face ID wasn’t enabled. Nothing changed."));
         return;
     }
 
@@ -686,81 +683,140 @@ void GazeClient::finishLockIntegrationInstall(bool authorized)
     // finished so the password conversation cannot be destroyed mid-flight.
     QString pluginError;
     if (!installUserPlugin(&pluginError)) {
-        m_lockIntegrationInstalling = false;
-        m_lockIntegrationError = pluginError;
-        emit lockIntegrationChanged();
+        finishLockActivation(false, pluginError);
         return;
     }
 
-    const QString enableCommand = QStandardPaths::findExecutable(
+    m_lockPluginRescanCommand = QStandardPaths::findExecutable(
+        QStringLiteral("omarchy-shell"));
+    m_lockPluginEnableCommand = QStandardPaths::findExecutable(
         QStringLiteral("omarchy-plugin-enable"));
-    if (enableCommand.isEmpty()) {
-        m_lockIntegrationInstalling = false;
-        m_lockIntegrationError = QStringLiteral(
-            "Face ID couldn’t be added to the lock screen. Try again.");
-        emit lockIntegrationChanged();
+    if (m_lockPluginRescanCommand.isEmpty() || m_lockPluginEnableCommand.isEmpty()) {
+        finishLockActivation(
+            false,
+            QStringLiteral("Face ID couldn’t be added to the lock screen. Try again."));
         return;
     }
 
-    m_lockPluginEnableCommand = enableCommand;
-    m_lockPluginEnableAttempts = 0;
-    attemptLockPluginEnable();
+    startLockPluginRescan();
 }
 
-void GazeClient::attemptLockPluginEnable()
+void GazeClient::startLockPluginRescan()
+{
+    if (!m_lockIntegrationInstalling || m_lockPluginRescanCommand.isEmpty()
+        || m_lockPluginEnableProcess)
+        return;
+
+    m_lockActivationPhase = LockActivationPhase::Rescanning;
+    ++m_lockPluginDiscoveryPasses;
+    auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    m_lockPluginEnableProcess = process;
+    connect(process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this,
+            [this, process](int, QProcess::ExitStatus) {
+                if (m_lockPluginEnableProcess != process
+                    || m_lockActivationPhase != LockActivationPhase::Rescanning)
+                    return;
+                abandonProcess(m_lockPluginEnableProcess);
+                startLockPluginEnable();
+            },
+            Qt::SingleShotConnection);
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process](QProcess::ProcessError) {
+                if (m_lockPluginEnableProcess != process
+                    || m_lockActivationPhase != LockActivationPhase::Rescanning)
+                    return;
+                m_lockPluginEnableProcess = nullptr;
+                process->deleteLater();
+                startLockPluginEnable();
+            },
+            Qt::SingleShotConnection);
+    process->start(m_lockPluginRescanCommand,
+                   {QStringLiteral("shell"), QStringLiteral("rescanPlugins")});
+}
+
+void GazeClient::startLockPluginEnable()
 {
     if (!m_lockIntegrationInstalling || m_lockPluginEnableCommand.isEmpty()
         || m_lockPluginEnableProcess)
         return;
 
-    ++m_lockPluginEnableAttempts;
+    m_lockActivationPhase = LockActivationPhase::Enabling;
     auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
     m_lockPluginEnableProcess = process;
+    const auto complete = [this, process] {
+        if (m_lockPluginEnableProcess != process
+            || m_lockActivationPhase != LockActivationPhase::Enabling)
+            return;
+        const QByteArray diagnostic = process->readAll();
+        if (!diagnostic.isEmpty())
+            qWarning().noquote() << QString::fromLocal8Bit(diagnostic).trimmed();
+        abandonProcess(m_lockPluginEnableProcess);
+        refreshLockIntegrationStatus();
+        if (m_lockIntegrationInstalled) {
+            finishLockActivation(true);
+        } else if (m_lockPluginDiscoveryPasses < 3) {
+            QTimer::singleShot(900, this, &GazeClient::startLockPluginRescan);
+        } else {
+            finishLockActivation(
+                false,
+                QStringLiteral("Face ID couldn’t be added to the lock screen. Try again."));
+        }
+    };
     connect(process,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this,
-            [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
-                if (m_lockPluginEnableProcess != process)
-                    return;
-                m_lockPluginEnableProcess = nullptr;
-                process->deleteLater();
-                handleLockPluginEnableResult(
-                    exitStatus == QProcess::NormalExit && exitCode == 0);
-            });
+            [complete](int, QProcess::ExitStatus) { complete(); },
+            Qt::SingleShotConnection);
     connect(process, &QProcess::errorOccurred, this,
-            [this, process](QProcess::ProcessError) {
-                if (m_lockPluginEnableProcess != process)
-                    return;
-                m_lockPluginEnableProcess = nullptr;
-                process->deleteLater();
-                handleLockPluginEnableResult(false);
-            });
-    process->start(m_lockPluginEnableCommand,
-                   {QString::fromLatin1(pluginId)});
+            [complete](QProcess::ProcessError) { complete(); },
+            Qt::SingleShotConnection);
+    process->start(m_lockPluginEnableCommand, {QString::fromLatin1(pluginId)});
 }
 
-void GazeClient::handleLockPluginEnableResult(bool enabled)
+void GazeClient::abandonProcess(QProcess *&process)
 {
-    if (!enabled && m_lockPluginEnableAttempts < 20) {
-        QTimer::singleShot(250, this, &GazeClient::attemptLockPluginEnable);
+    if (!process)
+        return;
+    QProcess *orphan = process;
+    process = nullptr;
+    disconnect(orphan, nullptr, this, nullptr);
+    if (orphan->state() == QProcess::NotRunning) {
+        orphan->deleteLater();
         return;
     }
+    orphan->setParent(nullptr);
+    connect(orphan,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            orphan, &QObject::deleteLater,
+            Qt::SingleShotConnection);
+    orphan->kill();
+}
 
-    if (!enabled) {
-        m_lockPluginEnableCommand.clear();
-        m_lockPluginEnableAttempts = 0;
-        m_lockIntegrationInstalling = false;
-        m_lockIntegrationError = QStringLiteral(
-            "Face ID couldn’t be added to the lock screen. Try again.");
-        emit lockIntegrationChanged();
-    } else {
-        m_lockPluginEnableCommand.clear();
-        m_lockPluginEnableAttempts = 0;
-        m_lockIntegrationInstalling = false;
-        m_lockIntegrationError.clear();
-        refreshLockIntegrationStatus();
-        emit lockIntegrationChanged();
+void GazeClient::finishLockActivation(bool success, const QString &error)
+{
+    if (m_lockActivationPhase == LockActivationPhase::Idle)
+        return;
+
+    m_lockActivationDeadline.stop();
+    abandonProcess(m_lockIntegrationProcess);
+    abandonProcess(m_lockPluginEnableProcess);
+    if (m_lockIntegrationPamFile) {
+        delete m_lockIntegrationPamFile;
+        m_lockIntegrationPamFile = nullptr;
     }
+    m_lockPluginEnableCommand.clear();
+    m_lockPluginRescanCommand.clear();
+    m_lockPluginDiscoveryPasses = 0;
+    m_lockActivationPhase = LockActivationPhase::Idle;
+    m_lockIntegrationInstalling = false;
+    refreshLockIntegrationStatus();
+    m_lockIntegrationError = success && m_lockIntegrationInstalled
+        ? QString() : error;
+    emit lockIntegrationChanged();
 }
 
 void GazeClient::onEnrollStatus(const QString &,
@@ -848,7 +904,10 @@ bool GazeClient::startParallelPreview()
     GError *error = nullptr;
     m_parallelPreviewPipeline = gst_parse_launch(
         "pipewiresrc do-timestamp=true ! "
+        "video/x-raw,pixel-aspect-ratio=1/1; image/jpeg ! "
+        "decodebin ! "
         "videoconvert ! "
+        "videoscale ! "
         "jpegenc quality=82 ! "
         "appsink name=preview-sink max-buffers=1 drop=true sync=false",
         &error);

@@ -107,7 +107,6 @@ ApplicationWindow {
         gazeClient.refresh()
         if (!gazeReady)
             return
-        promptDelay.stop()
         promptTransition.stop()
         displayedPrompt = "Preparing camera…"
         pendingPrompt = ""
@@ -119,7 +118,6 @@ ApplicationWindow {
 
     function cancelEnrollment() {
         beginGazeTimer.stop()
-        promptDelay.stop()
         promptTransition.stop()
         if (gazeClient.enrolling)
             gazeClient.cancelEnrollment()
@@ -134,7 +132,7 @@ ApplicationWindow {
         if (prompt === displayedPrompt && !promptTransition.running)
             return
         pendingPrompt = prompt
-        promptDelay.restart()
+        promptTransition.restart()
     }
 
     onActivePromptChanged: queueScanPrompt(activePrompt)
@@ -154,8 +152,12 @@ ApplicationWindow {
     Connections {
         target: gazeClient
         function onEnrollmentChanged() {
-            if (gazeClient.enrollmentComplete)
+            if (gazeClient.enrollmentComplete) {
+                promptTransition.stop()
+                root.displayedPrompt = "Scan complete."
+                root.scanPromptOpacity = 1
                 scanCompleteTimer.restart()
+            }
         }
     }
 
@@ -164,13 +166,6 @@ ApplicationWindow {
         interval: 900
         repeat: false
         onTriggered: root.currentStep = 3
-    }
-
-    Timer {
-        id: promptDelay
-        interval: 1000
-        repeat: false
-        onTriggered: promptTransition.restart()
     }
 
     SequentialAnimation {
@@ -575,7 +570,7 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             text: gazeClient.lockIntegrationInstalled
                                 ? "Try locking your computer.\nFace ID will appear after 3 seconds."
-                                : "Enter your system password to add Face ID to the lock screen."
+                                : "Approve the system prompt to add Face ID to the lock screen."
                             color: root.textColor
                             opacity: 0.78
                             font.family: "monospace"

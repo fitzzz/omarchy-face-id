@@ -103,17 +103,26 @@ private slots:
     void onPreviewFrame(const QByteArray &jpeg);
 
 private:
+    enum class LockActivationPhase {
+        Idle,
+        Authorizing,
+        Rescanning,
+        Enabling,
+    };
+
     void releaseClaim();
     void setError(const QString &message);
     void scheduleThemeReload();
     void reloadTheme();
     void refreshLockIntegrationStatus();
+    bool lockIntegrationStateMatches() const;
     void recordEnrollmentOwnership(const QString &faceName);
     bool installUserPlugin(QString *error);
-    bool holdGazeForPasswordAuthorization(QString *error);
-    void finishLockIntegrationInstall(bool authorized);
-    void attemptLockPluginEnable();
-    void handleLockPluginEnableResult(bool enabled);
+    void continueLockIntegrationInstall();
+    void startLockPluginRescan();
+    void startLockPluginEnable();
+    void finishLockActivation(bool success, const QString &error = {});
+    void abandonProcess(QProcess *&process);
     void finishFaceSetup(bool success, const QString &error = {});
     void playDing();
     bool startParallelPreview();
@@ -139,11 +148,14 @@ private:
     bool m_lockIntegrationInstalled = false;
     bool m_lockIntegrationInstalling = false;
     QString m_lockIntegrationError;
+    LockActivationPhase m_lockActivationPhase = LockActivationPhase::Idle;
     QProcess *m_lockIntegrationProcess = nullptr;
     QTemporaryFile *m_lockIntegrationPamFile = nullptr;
     QProcess *m_lockPluginEnableProcess = nullptr;
     QString m_lockPluginEnableCommand;
-    int m_lockPluginEnableAttempts = 0;
+    QString m_lockPluginRescanCommand;
+    int m_lockPluginDiscoveryPasses = 0;
+    QTimer m_lockActivationDeadline;
     QTemporaryFile *m_dingFile = nullptr;
     _GstElement *m_parallelPreviewPipeline = nullptr;
     std::atomic<qint64> m_lastPreviewFrameUsec{0};

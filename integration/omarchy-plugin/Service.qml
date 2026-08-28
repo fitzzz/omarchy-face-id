@@ -399,10 +399,13 @@ Item {
                 readonly property bool checking: root.overlayState === "checking"
                 readonly property bool unauthorized: root.overlayState === "unauthorized"
                 readonly property bool success: root.overlayState === "success"
-                readonly property color lockedColor: "#4b5563"
-                readonly property color activeColor: success ? "#65d1a7"
+                readonly property color lockedColor: Util.alpha(Color.lock.text, 0.58)
+                readonly property color unlockedColor: Color.lock.borderActive
+                readonly property color checkingColor: Color.lock.borderActive
+                readonly property color waitingColor: Color.accent
+                readonly property color activeColor: success ? unlockedColor
                     : unauthorized ? lockedColor
-                    : checking ? "#f59e0b" : Color.accent
+                    : checking ? checkingColor : waitingColor
                 property int sweepIndex: 0
                 property int glanceIndex: 0
                 property int glanceStep: 0
@@ -530,9 +533,9 @@ Item {
                     Rectangle {
                         anchors.fill: parent
                         radius: width / 2
-                        color: Qt.rgba(0.40, 0.82, 0.65, 0.12)
+                        color: Util.alpha(indicator.unlockedColor, 0.12)
                         border.width: 2
-                        border.color: "#65d1a7"
+                        border.color: indicator.unlockedColor
                     }
 
                     Shape {
@@ -541,7 +544,7 @@ Item {
                         preferredRendererType: Shape.CurveRenderer
                         ShapePath {
                             fillColor: "transparent"
-                            strokeColor: "#65d1a7"
+                            strokeColor: indicator.unlockedColor
                             strokeWidth: 6
                             capStyle: ShapePath.RoundCap
                             joinStyle: ShapePath.RoundJoin
@@ -557,7 +560,9 @@ Item {
                         : indicator.unauthorized ? "LOCKED"
                         : indicator.checking ? root.verifyingWord : "LOOK AT THE CAMERA"
                     color: indicator.unauthorized ? indicator.lockedColor
-                        : indicator.success ? "#65d1a7" : Color.lock.text
+                        : indicator.success ? indicator.unlockedColor
+                        : indicator.checking ? indicator.checkingColor
+                        : Color.lock.text
                     font.family: Style.font.family
                     font.pixelSize: Math.max(16, Style.font.caption + 3)
                     font.bold: true

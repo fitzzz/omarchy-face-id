@@ -27,8 +27,14 @@ grep -Fq 'id: retryTimer' "$service"
 grep -Fq 'interval: 2500' "$service"
 grep -Fq 'text: indicator.success ? "UNLOCKED"' "$service"
 grep -Fq ': indicator.unauthorized ? "LOCKED"' "$service"
-grep -Fq 'readonly property color lockedColor: "#4b5563"' "$service"
+grep -Fq 'readonly property color lockedColor: Util.alpha(Color.lock.text, 0.58)' "$service"
+grep -Fq 'readonly property color unlockedColor: Color.lock.borderActive' "$service"
+grep -Fq 'readonly property color checkingColor: Color.lock.borderActive' "$service"
 grep -Fq ': unauthorized ? lockedColor' "$service"
+if rg -n '#65d1a7|#f59e0b|#4b5563' "$service"; then
+    echo "Lock widget must use Omarchy theme colors instead of fixed status colors." >&2
+    exit 1
+fi
 grep -Fq 'readonly property var verifyingWords' "$service"
 grep -Fq '"EXTRAPOLATING"' "$service"
 grep -Fq '"SYNTHESIZING"' "$service"

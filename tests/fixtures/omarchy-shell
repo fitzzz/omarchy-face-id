@@ -5,6 +5,15 @@ set -euo pipefail
 [[ ${1:-} == "shell" ]]
 [[ ${2:-} == "rescanPlugins" ]]
 
-# Omarchy may time out while the watched plugin directory is already causing a
-# reload. Activation must still be attempted after this non-zero result.
-exit 1
+config_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy"
+mkdir -p "$config_dir"
+count_file="$config_dir/rescan-attempts"
+count=0
+[[ -f $count_file ]] && count=$(<"$count_file")
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+
+if [[ ${OMARCHY_FACE_ID_TEST_MODE:-success} != never-discover \
+    && ( ${OMARCHY_FACE_ID_TEST_MODE:-success} != delayed-discovery || $count -ge 2 ) ]]; then
+    : > "$config_dir/rescan-complete"
+fi

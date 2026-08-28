@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.2 - 2026-08-28
+
+- Fix final lock-screen activation by following Omarchy's required plugin lifecycle: install the complete subscriber, rescan plugins, then enable it asynchronously.
+- Remove the ineffective Gaze reservation workaround; Polkit may correctly authorize with Face ID when Gaze is already wired into system prompts.
+- Bound the activation flow so a vanished or hung authorization prompt returns to a retryable state instead of leaving the wizard stuck on **Enabling Face ID…**.
+- Update activation tests to model Omarchy's real plugin discovery behavior instead of a blind retry loop.
+- Use Omarchy lock/accent theme colors for the lock-screen Face ID widget and derive the rejected **Locked** state from the active lock text color.
+- Accept MJPEG PipeWire preview frames on laptops whose cameras do not deliver raw frames to the local scan preview.
+
 ## 0.6.1 - 2026-08-28
 
 - Use the active Omarchy theme accent for the Prepare panel border in every dependency and camera state instead of showing missing Gaze as a red error.
@@ -13,7 +22,7 @@
 - Play the bundled CC0 `ding.mp3` after successful enrollment and successful Face ID lock-screen authentication.
 - Replace **Perfect. Hold still.** with **Wrapping up...** during the final enrollment save.
 - Credit the original MLaudio Freesound asset in the third-party notices.
-- Reserve Gaze during the final privileged installation so Polkit uses the password path instead of dismissing its dialog through background face authentication.
+- Describe the final privileged installation as a system approval prompt because Polkit may authorize with either password or Face ID.
 - Label the dependency terminal **Installing Gaze…** instead of implying it is installing the Face ID app.
 - Keep the Qt wizard responsive while the Gaze enrollment authorization prompt is open, including when it loses focus or the user cancels it.
 - Keep Omarchy subscriber discovery and retry work off the Qt UI thread so the final screen cannot freeze on **Enabling Face ID…**.
