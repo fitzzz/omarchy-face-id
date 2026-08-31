@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Stop deliberately terminating bash inside the activation test suite. Existing nonzero-exit, denial, timeout, and bounded-retry scenarios cover the same production recovery path without creating fake system crashes or Omarchy notifications.
+
+## 0.6.5 - 2026-08-31
+
+- Add a first-run XDG configuration file at `~/.config/omarchy-face-id/config.toml`, preserve user edits during upgrades, and live-reload lock-screen settings.
+- Make low-power presence detection the default: after no face is found or a rejection is shown, Face ID enters a subtle themed Standby state instead of retrying forever.
+- Wake one fresh authentication attempt when a 160×120, 2 FPS local motion watcher detects movement, with mouse or keyboard activity as a fallback.
+- Keep `on_activity` and legacy `continuous` presence policies available as explicit configuration choices.
+- Package and byte-verify the motion watcher with the Omarchy lock subscriber, while keeping all camera frames memory-only.
+- Extend privacy-safe diagnostics with presence mode, watcher lifecycle, camera handoff, motion wake, and standby events, using one cross-process lock so concurrent records remain valid JSON Lines.
+
 ## 0.6.4 - 2026-08-28
 
 - Add a versioned JSON Lines diagnostic event log with bounded rotation, owner-only permissions, stable subsystem namespaces, per-producer session IDs, severity, sequence numbers, and typed attributes.
