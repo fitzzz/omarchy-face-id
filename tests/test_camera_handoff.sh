@@ -45,7 +45,7 @@ if grep -Fq ': root.gazeReady ? root.accentColor : root.errorColor' "$main_qml";
 fi
 grep -Fq 'id: scanLayout' "$main_qml"
 grep -Fq 'checkingColor: root.accentColor' "$main_qml"
-grep -Fq '"captured": "Wrapping up..."' "$main_qml"
+grep -Fq '"captured": "Perfect."' "$main_qml"
 grep -Fq 'playDing();' "$project_dir/app/GazeClient.cpp"
 grep -Fq 'assets/ding.mp3' "$project_dir/CMakeLists.txt"
 grep -Fq 'QDBusPendingCallWatcher' "$project_dir/app/GazeClient.cpp"

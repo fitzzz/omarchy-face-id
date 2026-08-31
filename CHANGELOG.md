@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.6.7 - 2026-08-31
+
+- Keep AppImage-managed Gaze authentication limited to Omarchy Face ID's dedicated lock-screen service by removing the official AUR package's broad sudo and Polkit PAM rules after installation.
+- Detect existing AppImage-managed Gaze installs that still have those broad rules and offer a one-click **Finish Setup** repair in the wizard.
+- Preserve broad PAM integrations on pre-existing Gaze installations that Omarchy Face ID does not own.
+- Replace the repeated enrollment transition message **Wrapping up...** with **Perfect.**
+
 ## 0.6.6 - 2026-08-31
 
 - Detect when an Omarchy machine lacks GStreamer JPEG camera support before enrollment instead of letting Gaze fail with **Camera connection lost**.

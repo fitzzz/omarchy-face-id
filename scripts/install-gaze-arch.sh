@@ -5,9 +5,14 @@ set -euo pipefail
 ownership_dir="${OMARCHY_FACE_ID_OWNERSHIP_DIR:-/var/lib/omarchy-face-id}"
 ownership_receipt="$ownership_dir/gaze-installed"
 ownership_value='omarchy-face-id:gaze-aur:gaze-bin'
+legacy_ownership_value='omarchy-face-id:gaze:0.2.12-1'
 camera_support_receipt="$ownership_dir/camera-support-installed"
 camera_support_value='omarchy-face-id:camera-support:gst-plugins-good'
 gaze_command="${OMARCHY_FACE_ID_GAZE_COMMAND:-gaze}"
+sudo_pam_file="${OMARCHY_FACE_ID_SUDO_PAM_PATH:-/etc/pam.d/sudo}"
+polkit_pam_file="${OMARCHY_FACE_ID_POLKIT_PAM_PATH:-/etc/pam.d/polkit-1}"
+sudo_pam_marker="${OMARCHY_FACE_ID_GAZE_SUDO_MARKER:-/etc/gaze/pam-arch.configured}"
+polkit_pam_marker="${OMARCHY_FACE_ID_GAZE_POLKIT_MARKER:-/etc/gaze/pam-arch.polkit-configured}"
 status_file=""
 self_delete=0
 wizard_mode=0
@@ -113,6 +118,7 @@ if ! command -v gst-inspect-1.0 >/dev/null 2>&1 \
 fi
 
 installed_by_face_id=0
+managed_by_face_id=0
 if ((gaze_missing == 0)) && pacman -Q gaze-bin >/dev/null 2>&1; then
     printf '  Face scanning is already installed.\n'
 elif ((gaze_missing == 0)); then
@@ -131,6 +137,39 @@ if ((installed_by_face_id)); then
     sudo install -d -o root -g root -m 0755 "$ownership_dir"
     sudo install -o root -g root -m 0644 "$receipt_temp" "$ownership_receipt"
     rm -f -- "$receipt_temp"
+fi
+
+if ((installed_by_face_id)) \
+    || { [[ -f $ownership_receipt ]] \
+        && { [[ $(<"$ownership_receipt") == "$ownership_value" ]] \
+            || [[ $(<"$ownership_receipt") == "$legacy_ownership_value" ]]; }; }; then
+    managed_by_face_id=1
+fi
+
+remove_gaze_auth_rule() {
+    local pam_file=$1
+    local marker=$2
+    [[ -r $pam_file && -r $marker ]] || return 0
+    [[ $(<"$marker") == "$pam_file" ]] || return 0
+
+    local pam_temp
+    pam_temp=$(mktemp -t omarchy-face-id-pam.XXXXXX)
+    awk '!($1 == "auth" && $2 == "sufficient" && $3 == "pam_gaze.so" && NF == 3)' \
+        "$pam_file" >"$pam_temp"
+    if ! cmp -s "$pam_temp" "$pam_file"; then
+        sudo install -o root -g root -m 0644 "$pam_temp" "$pam_file"
+    fi
+    rm -f -- "$pam_temp"
+}
+
+if ((managed_by_face_id)); then
+    remove_gaze_auth_rule "$sudo_pam_file" "$sudo_pam_marker"
+    remove_gaze_auth_rule "$polkit_pam_file" "$polkit_pam_marker"
+    if grep -Eq '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_gaze\.so[[:space:]]*$' \
+        "$sudo_pam_file" "$polkit_pam_file" 2>/dev/null; then
+        echo 'Face ID could not be limited to the lock screen.' >&2
+        exit 1
+    fi
 fi
 
 if ((camera_support_installed_by_face_id)); then

@@ -49,6 +49,7 @@ ApplicationWindow {
     readonly property bool gazeReady: gazeClient.installed
         && gazeClient.serviceAvailable
         && gazeClient.cameraSupportAvailable
+        && gazeClient.systemAuthenticationScoped
         && gazeClient.cameraAvailable
 
     function friendlyPrompt(prompt) {
@@ -58,7 +59,7 @@ ApplicationWindow {
             "look-down": "Look down slightly.",
             "look-left": "Turn slightly left.",
             "look-right": "Turn slightly right.",
-            "captured": "Wrapping up...",
+            "captured": "Perfect.",
             "completed": "Scan complete.",
             "camera-failed": "Camera connection lost.",
             "db-failed": "Your face scan could not be saved.",
@@ -80,13 +81,17 @@ ApplicationWindow {
         if (gazeClient.faceSetupInstalling)
             return !gazeClient.installed ? "Installing Gaze Package…"
                 : !gazeClient.cameraSupportAvailable
-                    ? "Installing Camera Support…" : "Starting Gaze Service…"
+                    ? "Installing Camera Support…"
+                    : !gazeClient.systemAuthenticationScoped
+                        ? "Finishing Face ID Setup…" : "Starting Gaze Service…"
         if (gazeReady)
             return "Camera Ready"
         if (!gazeClient.installed)
             return "Install Gaze from AUR"
         if (!gazeClient.cameraSupportAvailable)
             return "Complete Camera Setup"
+        if (!gazeClient.systemAuthenticationScoped)
+            return "Finish Face ID Setup"
         if (!gazeClient.serviceAvailable)
             return "Face Scanning Is Offline"
         return "Camera Unavailable"
@@ -103,6 +108,8 @@ ApplicationWindow {
             return "Gaze powers facial authentication with local liveness anti-spoofing and support for infrared (IR) cameras for secure authentication."
         if (!gazeClient.cameraSupportAvailable)
             return "Face ID needs one camera format component. Setup installs it through Omarchy."
+        if (!gazeClient.systemAuthenticationScoped)
+            return "Keep Face ID limited to your lock screen, as intended."
         if (!gazeClient.serviceAvailable)
             return "Start the face-scanning service, then check again."
         return "Close other camera apps, then check again."
@@ -444,9 +451,11 @@ ApplicationWindow {
                                     : !gazeClient.installed ? "Install Gaze Package"
                                         : !gazeClient.cameraSupportAvailable
                                             ? "Install Camera Support"
-                                            : "Start Gaze Service"
+                                            : !gazeClient.systemAuthenticationScoped
+                                                ? "Finish Setup" : "Start Gaze Service"
                                 visible: !gazeClient.installed
                                     || !gazeClient.cameraSupportAvailable
+                                    || !gazeClient.systemAuthenticationScoped
                                     || !gazeClient.serviceAvailable
                                 primary: true
                                 enabled: !gazeClient.faceSetupInstalling
@@ -456,9 +465,7 @@ ApplicationWindow {
                                 text: "Authorize and Scan Face"
                                 primary: true
                                 forwardIcon: true
-                                visible: gazeClient.installed
-                                    && gazeClient.serviceAvailable
-                                    && gazeClient.cameraSupportAvailable
+                                visible: root.gazeReady
                                 enabled: root.gazeReady
                                 onClicked: root.startEnrollment()
                             }

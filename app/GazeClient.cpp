@@ -40,6 +40,8 @@ constexpr auto objectPath = "/com/gundulabs/Gaze";
 constexpr auto interfaceName = "com.gundulabs.Gaze";
 constexpr auto facePamPath = "/etc/pam.d/omarchy-face-id-lock";
 constexpr auto pluginId = "fitzzz.face-id";
+constexpr auto gazeOwnershipValue = "omarchy-face-id:gaze-aur:gaze-bin\n";
+constexpr auto legacyGazeOwnershipValue = "omarchy-face-id:gaze:0.2.12-1\n";
 
 bool gazeConfigAllowsParallelPreview(const QString &path)
 {
@@ -111,6 +113,39 @@ bool fileMatches(const QString &path, const QByteArray &expected)
 {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) && file.readAll() == expected;
+}
+
+bool fileContainsGazeAuthRule(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+
+    static const QRegularExpression rule(
+        QStringLiteral("^\\s*auth\\s+sufficient\\s+pam_gaze\\.so\\s*$"));
+    QTextStream stream(&file);
+    while (!stream.atEnd()) {
+        if (rule.match(stream.readLine()).hasMatch())
+            return true;
+    }
+    return false;
+}
+
+bool systemAuthenticationIsScoped()
+{
+    const QString ownershipRoot = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_OWNERSHIP_DIR", QStringLiteral("/var/lib/omarchy-face-id"));
+    const QString ownershipReceipt = ownershipRoot + QStringLiteral("/gaze-installed");
+    if (!fileMatches(ownershipReceipt, QByteArray(gazeOwnershipValue))
+        && !fileMatches(ownershipReceipt, QByteArray(legacyGazeOwnershipValue)))
+        return true;
+
+    const QString sudoPam = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_SUDO_PAM_PATH", QStringLiteral("/etc/pam.d/sudo"));
+    const QString polkitPam = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_POLKIT_PAM_PATH", QStringLiteral("/etc/pam.d/polkit-1"));
+    return !fileContainsGazeAuthRule(sudoPam)
+        && !fileContainsGazeAuthRule(polkitPam);
 }
 
 QString presenceHelperSourcePath()
@@ -217,7 +252,8 @@ GazeClient::GazeClient(QObject *parent)
             }
             if (result == QStringLiteral("success")) {
                 refresh();
-                if (m_installed && m_serviceAvailable && m_cameraSupportAvailable) {
+                if (m_installed && m_serviceAvailable && m_cameraSupportAvailable
+                    && m_systemAuthenticationScoped) {
                     finishFaceSetup(true);
                     return;
                 }
@@ -285,6 +321,10 @@ bool GazeClient::installed() const { return m_installed; }
 bool GazeClient::serviceAvailable() const { return m_serviceAvailable; }
 bool GazeClient::cameraAvailable() const { return m_cameraAvailable; }
 bool GazeClient::cameraSupportAvailable() const { return m_cameraSupportAvailable; }
+bool GazeClient::systemAuthenticationScoped() const
+{
+    return m_systemAuthenticationScoped;
+}
 bool GazeClient::parallelPreviewAvailable() const { return m_parallelPreviewAvailable; }
 bool GazeClient::faceSetupInstalling() const { return m_faceSetupInstalling; }
 QString GazeClient::faceSetupError() const { return m_faceSetupError; }
@@ -379,11 +419,13 @@ void GazeClient::refresh()
     const bool wasAvailable = m_serviceAvailable;
     const bool wasCameraAvailable = m_cameraAvailable;
     const bool wasCameraSupportAvailable = m_cameraSupportAvailable;
+    const bool wasSystemAuthenticationScoped = m_systemAuthenticationScoped;
     const bool wasParallelPreviewAvailable = m_parallelPreviewAvailable;
 
     m_installed = QFileInfo(qEnvironmentVariable(
         "OMARCHY_FACE_ID_GAZE_PATH", QStringLiteral("/usr/bin/gaze"))).isExecutable();
     m_cameraSupportAvailable = jpegDecoderAvailable();
+    m_systemAuthenticationScoped = systemAuthenticationIsScoped();
     auto *busInterface = QDBusConnection::systemBus().interface();
     const QDBusReply<bool> registered = busInterface
         ? busInterface->isServiceRegistered(QString::fromLatin1(serviceName))
@@ -407,6 +449,7 @@ void GazeClient::refresh()
     if (wasInstalled != m_installed || wasAvailable != m_serviceAvailable
         || wasCameraAvailable != m_cameraAvailable
         || wasCameraSupportAvailable != m_cameraSupportAvailable
+        || wasSystemAuthenticationScoped != m_systemAuthenticationScoped
         || wasParallelPreviewAvailable != m_parallelPreviewAvailable) {
         m_diagnostics.record(
             QStringLiteral("app.environment"),
@@ -418,6 +461,8 @@ void GazeClient::refresh()
              {QStringLiteral("camera_available"), m_cameraAvailable},
              {QStringLiteral("camera_support_available"),
               m_cameraSupportAvailable},
+             {QStringLiteral("system_authentication_scoped"),
+              m_systemAuthenticationScoped},
              {QStringLiteral("parallel_preview_eligible"),
               m_parallelPreviewAvailable}});
         emit availabilityChanged();
@@ -433,7 +478,8 @@ void GazeClient::installFaceSetup()
                          QStringLiteral("setup_requested"));
 
     refresh();
-    if (m_installed && m_serviceAvailable && m_cameraSupportAvailable) {
+    if (m_installed && m_serviceAvailable && m_cameraSupportAvailable
+        && m_systemAuthenticationScoped) {
         m_faceSetupError.clear();
         emit faceSetupChanged();
         return;

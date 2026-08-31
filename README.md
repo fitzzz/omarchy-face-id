@@ -21,20 +21,20 @@ The current release implements only setup, enrollment, and lock-screen authentic
 
 ## Current safety boundary
 
-The AppImage handles dependency setup, enrollment, and lock integration. Its own subscriber uses a dedicated face-only PAM service and does not replace the lock screen or edit Omarchy's password service. Installing the official `gaze-bin` dependency runs that package's standard Arch installation hook, which currently adds optional face authentication to sudo and may initialize polkit authentication. Both retain password fallback, and Gaze's official uninstaller reverses those changes when the ownership receipt proves this wizard installed the package.
+The AppImage handles dependency setup, enrollment, and lock integration. Its subscriber uses a dedicated face-only PAM service and does not replace the lock screen or edit Omarchy's password service. The official `gaze-bin` package initially adds broad sudo and Polkit authentication rules. When Omarchy Face ID installed that package, the wizard removes only those two rules and keeps Gaze limited to the dedicated lock-screen service. Pre-existing Gaze installations are never rewritten.
 
 If a later Omarchy update changes the internal lock-service interface, Face ID fails closed: the face attempt stops and the existing password screen continues to work.
 
 ## Install on Omarchy
 
-Send the user only the versioned `Omarchy_Face_ID-0.6.6-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system prompt is approved. The same screen detects and repairs missing camera-format support on machines where Gaze is already installed. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin` and `omarchy pkg add gst-plugins-good`; it does not download, bundle, fork, or privately distribute either dependency. Normal Omarchy updates therefore keep both packages current.
+Send the user only the versioned `Omarchy_Face_ID-0.6.7-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system prompt is approved. The same screen detects and repairs missing camera-format support or an older AppImage-managed Gaze setup that still has system-wide authentication enabled. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin` and `omarchy pkg add gst-plugins-good`; it does not download, bundle, fork, or privately distribute either dependency. Normal Omarchy updates therefore keep both packages current.
 
-If Gaze or `gst-plugins-good` was already installed, Face ID uses it without claiming ownership. Separate root-owned receipts record only the packages this wizard adds. Uninstall can therefore invoke Gaze's official cleanup and remove camera support without touching pre-existing packages. The official `gaze-bin` package currently enables Gaze in shared PAM surfaces such as sudo while preserving password fallback; the wizard labels the package installation explicitly rather than hiding that system change.
+If Gaze or `gst-plugins-good` was already installed, Face ID uses it without claiming ownership. Separate root-owned receipts record only the packages this wizard adds. Uninstall can therefore invoke Gaze's official cleanup and remove camera support without touching pre-existing packages.
 
 ## Run the current AppImage
 
 ```bash
-./dist/Omarchy_Face_ID-0.6.6-x86_64.AppImage
+./dist/Omarchy_Face_ID-0.6.7-x86_64.AppImage
 ```
 
 The wizard enrolls the face and offers to enable the lock-screen subscriber. A short completion sound plays after enrollment and after each successful Face ID unlock. Then lock the computer and look directly at the camera. Face ID appears after three seconds. While scanning, the lock screen cross-fades through a rotating set of short processing words every two seconds. It uses the active Omarchy lock-screen theme for every state. When nobody is present, it settles into a subtle Standby state instead of scanning forever. The default low-power watcher samples a tiny local stream at 2 FPS and wakes one new attempt when it sees movement; frames remain in memory and are never saved. Password entry stays available throughout.
@@ -50,7 +50,7 @@ The setup app records privacy-safe structured events in `~/.local/state/omarchy-
 Run the full uninstaller from the AppImage as your normal user:
 
 ```bash
-./dist/Omarchy_Face_ID-0.6.6-x86_64.AppImage --uninstall
+./dist/Omarchy_Face_ID-0.6.7-x86_64.AppImage --uninstall
 ```
 
 From a source checkout, `./scripts/uninstall.sh` runs the same command. It removes the saved `default` face enrollment, the dedicated face-only PAM service, and the Omarchy lock-screen subscriber. It removes Gaze and camera support only when their separate root-owned receipts prove this project installed them. Pre-existing packages are kept. Your password configuration is never removed or replaced. Delete the portable AppImage file afterward if it was not managed by an AppImage installer.
