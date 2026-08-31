@@ -1,61 +1,86 @@
 # Omarchy Face ID
 
-Omarchy Face ID is a standalone setup app and local biometric foundation for Omarchy, powered by [Gaze](https://github.com/GunduLabs/gaze). During setup, the app adds a small Omarchy lock-screen subscriber; the product itself is not an Omarchy plugin. Face ID may add a way in, but it must never remove an existing password path.
+## Unlock Omarchy with a glance.
 
-The current build includes:
+Omarchy Face ID brings fast, private facial authentication to the Omarchy lock screen. Look at the camera and your computer unlocks. Face matching and liveness checks happen locally. Camera footage is never saved. Your password continues to work too.
 
-- a live enrollment feed using Gaze frames for exclusive cameras and a shared local PipeWire preview when Gaze deliberately omits them;
-- an animated face surrounded by radial scan marks;
-- a five-angle guided enrollment walkthrough;
-- real Gaze enrollment through its system D-Bus service;
-- a four-screen Welcome, Prepare, Scan, and Done journey; and
-- an update-soft Omarchy lock-screen subscriber;
-- a click-through lock-screen face, scan-ring, and checkmark overlay; and
-- an Omarchy-targeted AppImage build.
+![Omarchy Face ID scanning on the lock screen](docs/images/demo.png)
 
-## Platform direction
+## Install
 
-Enrollment, local matching, liveness checks, and biometric storage form the reusable Face ID foundation. Integrations such as the lock screen remain narrow subscribers with their own authorization policy and failure behavior.
-
-The current release implements only setup, enrollment, and lock-screen authentication. Future password prompts, privilege elevation, passkeys, and other biometric consumers are product direction—not implemented behavior.
-
-## Current safety boundary
-
-The AppImage handles dependency setup, enrollment, and lock integration. Its subscriber uses a dedicated face-only PAM service and does not replace the lock screen or edit Omarchy's password service. The official `gaze-bin` package initially adds broad sudo and Polkit authentication rules. When Omarchy Face ID installed that package, the wizard removes only those two rules and keeps Gaze limited to the dedicated lock-screen service. Pre-existing Gaze installations are never rewritten.
-
-If a later Omarchy update changes the internal lock-service interface, Face ID fails closed: the face attempt stops and the existing password screen continues to work.
-
-## Install on Omarchy
-
-Send the user only the versioned `Omarchy_Face_ID-0.6.7-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system prompt is approved. The same screen detects and repairs missing camera-format support or an older AppImage-managed Gaze setup that still has system-wide authentication enabled. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin` and `omarchy pkg add gst-plugins-good`; it does not download, bundle, fork, or privately distribute either dependency. Normal Omarchy updates therefore keep both packages current.
-
-If Gaze or `gst-plugins-good` was already installed, Face ID uses it without claiming ownership. Separate root-owned receipts record only the packages this wizard adds. Uninstall can therefore invoke Gaze's official cleanup and remove camera support without touching pre-existing packages.
-
-## Run the current AppImage
+[Download Omarchy Face ID 0.6.7](https://github.com/fitzzz/omarchy-face-id/releases/download/v0.6.7/Omarchy_Face_ID-0.6.7-x86_64.AppImage), make it executable, and open it:
 
 ```bash
-./dist/Omarchy_Face_ID-0.6.7-x86_64.AppImage
+chmod +x ~/Downloads/Omarchy_Face_ID-0.6.7-x86_64.AppImage
+~/Downloads/Omarchy_Face_ID-0.6.7-x86_64.AppImage
 ```
 
-The wizard enrolls the face and offers to enable the lock-screen subscriber. A short completion sound plays after enrollment and after each successful Face ID unlock. Then lock the computer and look directly at the camera. Face ID appears after three seconds. While scanning, the lock screen cross-fades through a rotating set of short processing words every two seconds. It uses the active Omarchy lock-screen theme for every state. When nobody is present, it settles into a subtle Standby state instead of scanning forever. The default low-power watcher samples a tiny local stream at 2 FPS and wakes one new attempt when it sees movement; frames remain in memory and are never saved. Password entry stays available throughout.
+The guided setup checks your camera, installs anything Omarchy needs, and captures five quick angles of your face. When the scan is complete, Face ID is ready.
 
-Lock-screen behavior is configurable in `~/.config/omarchy-face-id/config.toml` (or `$XDG_CONFIG_HOME/omarchy-face-id/config.toml`). The app creates this file once, never overwrites user changes, and the installed subscriber reloads edits automatically. See [Configuration](docs/configuration.md).
+Lock your computer and look directly at the camera. Face ID appears after three seconds, confirms it is really you, and unlocks Omarchy.
 
-## Diagnostics
+## Designed to disappear
 
-The setup app records privacy-safe structured events in `~/.local/state/omarchy-face-id/diagnostics.jsonl`. The log contains state transitions and sanitized result categories, never usernames, device paths, raw errors, camera images, face embeddings, or biometric templates. Attach that file when reporting an enrollment or activation failure. See [the diagnostic schema](docs/diagnostics.md).
+- **Private by design.** Face matching, liveness checks, and biometric storage stay on your computer.
+- **Hard to fool.** Liveness protection is designed to reject flat photographs instead of accepting any matching image.
+- **Always familiar.** Face ID works with the existing Omarchy lock screen and follows the active theme.
+- **Quiet when you leave.** It waits before scanning, sleeps when nobody is there, and wakes when it detects movement.
+- **Your password stays.** Face ID adds a faster way in. It never removes or replaces password unlock.
+
+## What you will see
+
+The lock-screen indicator follows a simple rhythm:
+
+1. **Standby** when nobody is present.
+2. A subtle animated scan when you return.
+3. **Locked** when a face cannot be verified.
+4. A checkmark when Omarchy is unlocked.
+
+A short sound confirms a successful face scan and unlock. Every failure is soft: if the camera, Face ID, or an Omarchy integration is unavailable, the password screen keeps working.
+
+## Make it yours
+
+Lock-screen behavior lives in:
+
+```text
+~/.config/omarchy-face-id/config.toml
+```
+
+Low-power presence detection is enabled by default. The app creates the configuration once, preserves your changes during upgrades, and reloads them automatically. See [Configuration](docs/configuration.md) for every option.
+
+## Privacy and diagnostics
+
+Omarchy Face ID never logs camera images, face templates, biometric data, usernames, device paths, or passwords.
+
+When something goes wrong, privacy-safe diagnostics are written to:
+
+```text
+~/.local/state/omarchy-face-id/diagnostics.jsonl
+```
+
+Attach that file to a bug report. It records setup and authentication states, camera capabilities, and sanitized outcomes without recording who you are or what the camera saw. See [Diagnostics](docs/diagnostics.md) for the event format.
 
 ## Uninstall
 
-Run the full uninstaller from the AppImage as your normal user:
+Run the AppImage as your normal user:
 
 ```bash
-./dist/Omarchy_Face_ID-0.6.7-x86_64.AppImage --uninstall
+~/Downloads/Omarchy_Face_ID-0.6.7-x86_64.AppImage --uninstall
 ```
 
-From a source checkout, `./scripts/uninstall.sh` runs the same command. It removes the saved `default` face enrollment, the dedicated face-only PAM service, and the Omarchy lock-screen subscriber. It removes Gaze and camera support only when their separate root-owned receipts prove this project installed them. Pre-existing packages are kept. Your password configuration is never removed or replaced. Delete the portable AppImage file afterward if it was not managed by an AppImage installer.
+Uninstall removes Omarchy Face ID, its lock-screen integration, and the saved face scan. It removes Gaze and camera support only when its root-owned receipts prove that Omarchy Face ID installed them. Software that was already present is left alone. Your password is unchanged.
 
-The package intentionally uses the Qt 6 libraries already supplied by Omarchy; bundling a second Linux multimedia stack caused loader conflicts during testing.
+## How it works
+
+Omarchy Face ID is a standalone setup app with a small, update-soft subscriber for Omarchy's existing lock screen. It does not replace the lock screen and the product itself is not an Omarchy plugin.
+
+[Gaze](https://github.com/GunduLabs/gaze) owns enrollment, local face matching, liveness detection, and biometric storage. The setup app installs the official `gaze-bin` package through Omarchy's standard AUR workflow when needed. Missing JPEG camera support is installed through the official `gst-plugins-good` Arch package. Neither dependency is downloaded, forked, or privately redistributed by this project.
+
+The official Gaze package initially adds broad sudo and Polkit authentication rules. When Omarchy Face ID installed Gaze, setup removes only those rules and keeps facial authentication limited to the dedicated lock-screen service. Pre-existing Gaze installations are never rewritten.
+
+For exclusive V4L2 and infrared cameras, the app displays preview frames supplied by Gaze. For a shareable PipeWire RGB camera, it opens a second display-only PipeWire stream after Gaze owns enrollment. The app never uses Qt Multimedia or direct V4L2 capture for its preview.
+
+If a future Omarchy update changes the internal lock interface, Face ID stops and leaves password unlock available. A supported Omarchy biometric-provider API remains the preferred long-term integration.
 
 ## Build from source
 
@@ -74,18 +99,12 @@ Build the AppImage with:
 ./scripts/build-appimage.sh
 ```
 
-Every release uses the semantic version in [`VERSION`](VERSION). Update that file and move the completed entries from **Unreleased** into a dated section in [`CHANGELOG.md`](CHANGELOG.md) before distributing a build. The executable, plugin manifest, AppImage metadata, and versioned filename are checked against that release version during packaging.
+Every release uses the semantic version in [`VERSION`](VERSION). Update it and move completed entries from **Unreleased** into a dated section in [`CHANGELOG.md`](CHANGELOG.md) before distributing a build. The executable, plugin manifest, AppImage metadata, and versioned filename are checked against that release version during packaging.
 
-The script downloads a pinned, checksum-verified linuxdeploy release to obtain `appimagetool`. The resulting x86-64 file is written under `dist/`.
-
-## Gaze behavior
-
-When `com.gundulabs.Gaze` is present on the system bus, the app claims the current user, starts enrollment, receives Gaze's prompts and preview frames, and releases the claim on completion or cancellation. When the service is missing or stops responding, the app reports that enrollment is unavailable and leaves the operating system untouched.
-
-Gaze remains the sole owner of face matching, liveness detection, enrollment, and biometric storage. For exclusive V4L2 or infrared configurations, the app renders Gaze's preview frames. For a PipeWire-only RGB configuration, Gaze 0.2.12 deliberately omits those frames because PipeWire can safely share the camera; the app mirrors Gaze's own GUI behavior by opening a second, display-only PipeWire stream alongside daemon capture. The app never opens the camera through Qt Multimedia or direct V4L2.
+The AppImage intentionally uses the Qt 6 libraries already supplied by Omarchy. Bundling a second rolling-release Qt and multimedia stack caused loader conflicts during testing.
 
 ## Project status
 
-This is an early development build. The current compatibility integration uses the first-party lock service's existing `finishUnlock()` method and checks for it at runtime. Its visual is a separate, non-interactive Hyprland layer above the lock, so it does not replace the password field or patch Omarchy. A future, supported Omarchy biometric-provider API is still preferred. See [the initial build plan](docs/2026-08-28-initial-build.md).
+Omarchy Face ID is an early release for x86-64 Omarchy systems. The current compatibility layer checks for Omarchy's lock service at runtime and draws a separate, non-interactive Hyprland layer above it. It never patches the password field.
 
-Project code is GPL-3.0-or-later. The Lucide-derived eye geometry and the CC0 MLaudio completion sound are covered by [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Project code is GPL-3.0-or-later. The Lucide-derived eye geometry and CC0 MLaudio completion sound are covered by [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The original design direction is recorded in [the initial build plan](docs/2026-08-28-initial-build.md).
