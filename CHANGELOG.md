@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+## 0.6.6 - 2026-08-31
+
+- Detect when an Omarchy machine lacks GStreamer JPEG camera support before enrollment instead of letting Gaze fail with **Camera connection lost**.
+- Install the official `gst-plugins-good` Arch package through Omarchy as part of the AppImage wizard, including repair of otherwise healthy pre-existing Gaze installations.
+- Restart Gaze after adding camera support so the new decoder is available immediately, then continue the wizard automatically.
+- Track camera-support package ownership independently and remove it on uninstall only when Omarchy Face ID installed it.
 - Stop deliberately terminating bash inside the activation test suite. Existing nonzero-exit, denial, timeout, and bounded-retry scenarios cover the same production recovery path without creating fake system crashes or Omarchy notifications.
+- Record the distributable, cross-device AppImage goal and its installation, safety, diagnostics, and hardware-compatibility constraints in `AGENTS.md`.
 
 ## 0.6.5 - 2026-08-31
 
