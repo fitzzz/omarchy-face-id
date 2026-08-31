@@ -1,0 +1,21 @@
+# Omarchy Face ID user configuration
+# This file is created once and is never overwritten during upgrades.
+schema_version = 1
+
+[lock_screen]
+# low_power: keep a tiny 160x120, 2 FPS motion watcher active while sleeping.
+# on_activity: turn the camera off and wake Face ID on mouse or keyboard activity.
+# continuous: preserve the original automatic retry behavior.
+presence_mode = "low_power"
+
+# low, medium, or high. Higher sensitivity wakes on smaller visual changes.
+motion_sensitivity = "medium"
+
+# Wait after locking so Face ID does not immediately unlock before you leave.
+start_delay_ms = 3000
+
+# Keep a rejected result visible before entering the sleeping state.
+rejection_hold_ms = 2500
+
+# Keep a subtle themed indicator visible while Face ID is sleeping.
+sleeping_indicator = true

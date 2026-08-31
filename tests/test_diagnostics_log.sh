@@ -10,7 +10,15 @@ trap 'rm -rf -- "$temporary_dir"' EXIT
 XDG_STATE_HOME="$temporary_dir/state" \
 QT_QPA_PLATFORM=offscreen \
 QT_QUICK_BACKEND=software \
-    "$app_binary" --smoke-test >"$temporary_dir/app.log" 2>&1
+    "$app_binary" --smoke-test >"$temporary_dir/app.log" 2>&1 &
+
+for index in {1..8}; do
+    XDG_STATE_HOME="$temporary_dir/state" \
+        "$project_root/integration/omarchy-plugin/log-event.sh" \
+            subscriber_started debug 12345678-1234-1234-1234-123456789abc \
+            generation="$index" &
+done
+wait
 
 XDG_STATE_HOME="$temporary_dir/state" \
     "$project_root/integration/omarchy-plugin/log-event.sh" \

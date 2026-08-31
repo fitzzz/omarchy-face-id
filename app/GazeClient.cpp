@@ -4,6 +4,7 @@
 
 #include "CameraInventory.h"
 
+#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
@@ -96,6 +97,27 @@ bool fileMatches(const QString &path, const QByteArray &expected)
     return file.open(QIODevice::ReadOnly) && file.readAll() == expected;
 }
 
+QString presenceHelperSourcePath()
+{
+    const QString overridePath = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_PRESENCE_HELPER_PATH");
+    const QString applicationDirectory = QCoreApplication::applicationDirPath();
+    const QStringList candidates = overridePath.isEmpty()
+        ? QStringList{
+              applicationDirectory + QStringLiteral("/omarchy-face-id-presence"),
+              QDir::cleanPath(applicationDirectory
+                              + QStringLiteral("/../libexec/omarchy-face-id-presence"))}
+        : QStringList{overridePath};
+
+    for (const QString &candidate : candidates) {
+        const QFileInfo info(candidate);
+        if (info.isFile() && info.isReadable() && info.isExecutable()
+            && !info.isSymLink())
+            return candidate;
+    }
+    return {};
+}
+
 bool pluginEnabled(const QString &configRoot)
 {
     QFile config(configRoot + QStringLiteral("/omarchy/shell.json"));
@@ -153,6 +175,7 @@ GazeClient::GazeClient(QObject *parent)
         DiagnosticLog::Level::Info,
         {{QStringLiteral("app_version"), QStringLiteral(OMARCHY_FACE_ID_VERSION)},
          {QStringLiteral("log_schema_version"), 1}});
+    ensureUserConfig();
     m_themeRoot = qEnvironmentVariable("OMARCHY_FACE_ID_THEME_ROOT",
                                        QDir::homePath()
                                            + QStringLiteral("/.local/state/omarchy/current"));
@@ -269,6 +292,69 @@ QColor GazeClient::themeAccent() const { return m_themeAccent; }
 QColor GazeClient::themeOrange() const { return m_themeOrange; }
 QColor GazeClient::themeGreen() const { return m_themeGreen; }
 QColor GazeClient::themeRed() const { return m_themeRed; }
+
+void GazeClient::ensureUserConfig()
+{
+    QString configRoot = qEnvironmentVariable("OMARCHY_FACE_ID_CONFIG_HOME");
+    if (configRoot.isEmpty())
+        configRoot = qEnvironmentVariable("OMARCHY_FACE_ID_CONFIG_ROOT");
+    if (configRoot.isEmpty())
+        configRoot = QStandardPaths::writableLocation(
+            QStandardPaths::GenericConfigLocation);
+    const QString directory = configRoot + QStringLiteral("/omarchy-face-id");
+    const QString targetPath = directory + QStringLiteral("/config.toml");
+    const QFileInfo targetInfo(targetPath);
+
+    if (targetInfo.isSymLink()) {
+        m_diagnostics.record(QStringLiteral("app.configuration"),
+                             QStringLiteral("user_config_rejected"),
+                             DiagnosticLog::Level::Error,
+                             {{QStringLiteral("reason"), QStringLiteral("symlink")}});
+        return;
+    }
+    if (targetInfo.exists()) {
+        m_diagnostics.record(QStringLiteral("app.configuration"),
+                             QStringLiteral("user_config_observed"),
+                             DiagnosticLog::Level::Info,
+                             {{QStringLiteral("created"), false}});
+        return;
+    }
+
+    const bool directoryExisted = QFileInfo::exists(directory);
+    if (!QDir().mkpath(directory)) {
+        m_diagnostics.record(QStringLiteral("app.configuration"),
+                             QStringLiteral("user_config_create_failed"),
+                             DiagnosticLog::Level::Error,
+                             {{QStringLiteral("stage"), QStringLiteral("directory")}});
+        return;
+    }
+    if (!directoryExisted) {
+        QFile::setPermissions(directory,
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                  | QFileDevice::ExeOwner);
+    }
+
+    const QByteArray defaults = resourceContents(
+        QStringLiteral(":/config/default-config.toml"));
+    QSaveFile target(targetPath);
+    if (defaults.isEmpty()
+        || !target.open(QIODevice::WriteOnly)
+        || target.write(defaults) != defaults.size()
+        || !target.commit()
+        || !QFile::setPermissions(
+            targetPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
+        m_diagnostics.record(QStringLiteral("app.configuration"),
+                             QStringLiteral("user_config_create_failed"),
+                             DiagnosticLog::Level::Error,
+                             {{QStringLiteral("stage"), QStringLiteral("file")}});
+        return;
+    }
+
+    m_diagnostics.record(QStringLiteral("app.configuration"),
+                         QStringLiteral("user_config_observed"),
+                         DiagnosticLog::Level::Info,
+                         {{QStringLiteral("created"), true}});
+}
 
 void GazeClient::refresh()
 {
@@ -689,8 +775,13 @@ bool GazeClient::lockIntegrationStateMatches() const
         + QStringLiteral("/omarchy/plugins/") + QString::fromLatin1(pluginId);
     const QString configuredPamPath = qEnvironmentVariable(
         "OMARCHY_FACE_ID_PAM_PATH", QString::fromLatin1(facePamPath));
+    const QString presenceHelper = presenceHelperSourcePath();
+    const QByteArray presenceHelperContents = resourceContents(presenceHelper);
+    const QString installedPresenceHelper = pluginRoot
+        + QStringLiteral("/presence-watcher");
 
-    return fileMatches(
+    return !presenceHelperContents.isEmpty()
+        && fileMatches(
         configuredPamPath,
         resourceContents(QStringLiteral(":/packaging/pam/omarchy-face-id-lock")))
         && fileMatches(
@@ -705,6 +796,8 @@ bool GazeClient::lockIntegrationStateMatches() const
         && fileMatches(
             pluginRoot + QStringLiteral("/log-event.sh"),
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/log-event.sh")))
+        && fileMatches(installedPresenceHelper, presenceHelperContents)
+        && QFileInfo(installedPresenceHelper).isExecutable()
         && pluginEnabled(configRoot);
 }
 
@@ -742,10 +835,9 @@ bool GazeClient::installUserPlugin(QString *error)
         return false;
     }
 
-    const auto writeResource = [error](const QString &resourcePath,
+    const auto writeContents = [error](const QByteArray &contents,
                                        const QString &targetPath,
                                        QFileDevice::Permissions permissions) {
-        const QByteArray contents = resourceContents(resourcePath);
         if (contents.isEmpty()) {
             *error = QStringLiteral("This build is missing an integration file.");
             return false;
@@ -767,11 +859,17 @@ bool GazeClient::installUserPlugin(QString *error)
         }
         return true;
     };
+    const auto writeResource = [&writeContents](const QString &resourcePath,
+                                                const QString &targetPath,
+                                                QFileDevice::Permissions permissions) {
+        return writeContents(resourceContents(resourcePath), targetPath, permissions);
+    };
 
     const auto readable = QFileDevice::ReadOwner | QFileDevice::WriteOwner
         | QFileDevice::ReadGroup | QFileDevice::ReadOther;
     const auto executable = readable | QFileDevice::ExeOwner
         | QFileDevice::ExeGroup | QFileDevice::ExeOther;
+    const QByteArray presenceHelper = resourceContents(presenceHelperSourcePath());
 
     return writeResource(
                QStringLiteral(":/integration/omarchy-plugin/Service.qml"),
@@ -784,7 +882,10 @@ bool GazeClient::installUserPlugin(QString *error)
             pluginRoot + QStringLiteral("/ding.mp3"), readable)
         && writeResource(
             QStringLiteral(":/integration/omarchy-plugin/log-event.sh"),
-            pluginRoot + QStringLiteral("/log-event.sh"), executable);
+            pluginRoot + QStringLiteral("/log-event.sh"), executable)
+        && writeContents(
+            presenceHelper,
+            pluginRoot + QStringLiteral("/presence-watcher"), executable);
 }
 
 void GazeClient::continueLockIntegrationInstall()

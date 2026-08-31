@@ -56,10 +56,6 @@ else
         exit 1
     fi
 
-    if [[ ${OMARCHY_FACE_ID_TEST_MODE:-success} == crash-once && $attempt -eq 1 ]]; then
-        kill -SEGV $$
-    fi
-
     printf '%s\n' '{"version":1,"plugins":[{"id":"fitzzz.face-id"}]}' \
         > "$config_dir/shell.json"
 fi

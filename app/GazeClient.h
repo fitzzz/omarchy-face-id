@@ -116,6 +116,7 @@ private:
     void setError(const QString &message);
     void scheduleThemeReload();
     void reloadTheme();
+    void ensureUserConfig();
     void refreshLockIntegrationStatus();
     bool lockIntegrationStateMatches() const;
     void recordEnrollmentOwnership(const QString &faceName);

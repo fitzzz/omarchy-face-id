@@ -11,6 +11,8 @@
 #include <QStandardPaths>
 #include <QUuid>
 
+#include <sys/file.h>
+
 namespace {
 constexpr qint64 maximumLogBytes = 1024 * 1024;
 constexpr int retainedLogFiles = 3;
@@ -109,6 +111,12 @@ void DiagnosticLog::record(const QString &component,
         return;
 
     QMutexLocker locker(&m_mutex);
+    QFile processLock(QFileInfo(m_path).dir().filePath(
+        QStringLiteral("diagnostics.lock")));
+    if (!processLock.open(QIODevice::WriteOnly | QIODevice::Append)
+        || flock(processLock.handle(), LOCK_EX) != 0)
+        return;
+    processLock.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     rotateIfNeeded();
 
     QJsonObject record{
@@ -127,8 +135,10 @@ void DiagnosticLog::record(const QString &component,
     QFile file(m_path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
         return;
-    file.write(QJsonDocument(record).toJson(QJsonDocument::Compact));
-    file.write("\n");
+    QByteArray line = QJsonDocument(record).toJson(QJsonDocument::Compact);
+    line.append('\n');
+    file.write(line);
     file.flush();
     file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    flock(processLock.handle(), LOCK_UN);
 }

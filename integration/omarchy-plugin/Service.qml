@@ -25,6 +25,14 @@ Item {
     property string verifyingWord: "EXTRAPOLATING"
     property real verifyingWordOpacity: 0.9
     property string diagnosticSessionId: createDiagnosticSessionId()
+    property string presenceMode: "low_power"
+    property string motionSensitivity: "medium"
+    property int configuredStartDelayMs: 3000
+    property int configuredRejectionHoldMs: 2500
+    property bool sleepingIndicator: true
+    property bool inputWakeArmed: false
+    property int presenceGeneration: -1
+    property bool waitingForPresenceExit: false
 
     readonly property var verifyingWords: [
         "EXTRAPOLATING",
@@ -56,8 +64,9 @@ Item {
     readonly property bool overlayVisible: overlayPreviewVisible || (lockService
         && compatible
         && lockService.locked
-        && (status === "waiting" || status === "checking"
-            || status === "unauthorized" || status === "success"))
+        && (status === "waiting" || status === "waking" || status === "checking"
+            || status === "unauthorized" || status === "success"
+            || (status === "sleeping" && sleepingIndicator)))
     readonly property string aboveLockRule: 'hl.layer_rule({ name = "omarchy-face-id-above-lock", match = { namespace = "omarchy-face-id-overlay" }, above_lock = 1 })'
 
     readonly property string userName: Quickshell.env("USER") || Quickshell.env("LOGNAME")
@@ -65,6 +74,12 @@ Item {
         Qt.resolvedUrl("ding.mp3").toString().replace("file://", ""))
     readonly property string diagnosticLoggerPath: decodeURIComponent(
         Qt.resolvedUrl("log-event.sh").toString().replace("file://", ""))
+    readonly property string presenceHelperPath: decodeURIComponent(
+        Qt.resolvedUrl("presence-watcher").toString().replace("file://", ""))
+    readonly property string configRoot: Quickshell.env("XDG_CONFIG_HOME")
+        || ((Quickshell.env("HOME") || "/tmp") + "/.config")
+    readonly property string userConfigPath: configRoot
+        + "/omarchy-face-id/config.toml"
     readonly property bool compatible: lockService
         && typeof lockService.finishUnlock === "function"
         && lockService.locked !== undefined
@@ -121,6 +136,69 @@ Item {
         return "other"
     }
 
+    function boundedInteger(value, fallback, minimum, maximum) {
+        var parsed = Number(value)
+        if (!Number.isFinite(parsed)) return fallback
+        return Math.max(minimum, Math.min(maximum, Math.round(parsed)))
+    }
+
+    function loadUserConfig(raw) {
+        var nextMode = "low_power"
+        var nextSensitivity = "medium"
+        var nextStartDelay = 3000
+        var nextRejectionHold = 2500
+        var nextSleepingIndicator = true
+        var section = ""
+        var lines = String(raw || "").split(/\r?\n/)
+
+        for (var index = 0; index < lines.length; index++) {
+            var line = lines[index].trim()
+            if (!line || line[0] === "#") continue
+            var sectionMatch = line.match(/^\[([a-z_]+)\]$/)
+            if (sectionMatch) {
+                section = sectionMatch[1]
+                continue
+            }
+            if (section !== "lock_screen") continue
+
+            var valueMatch = line.match(/^([a-z_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s#]+))/)
+            if (!valueMatch) continue
+            var key = valueMatch[1]
+            var value = valueMatch[2] !== undefined ? valueMatch[2]
+                : valueMatch[3] !== undefined ? valueMatch[3] : valueMatch[4]
+            if (key === "presence_mode"
+                && (value === "low_power" || value === "on_activity"
+                    || value === "continuous")) nextMode = value
+            else if (key === "motion_sensitivity"
+                     && (value === "low" || value === "medium" || value === "high"))
+                nextSensitivity = value
+            else if (key === "start_delay_ms")
+                nextStartDelay = boundedInteger(value, 3000, 0, 30000)
+            else if (key === "rejection_hold_ms")
+                nextRejectionHold = boundedInteger(value, 2500, 500, 10000)
+            else if (key === "sleeping_indicator")
+                nextSleepingIndicator = value === "true" ? true
+                    : value === "false" ? false : true
+        }
+
+        var modeChanged = presenceMode !== nextMode
+        presenceMode = nextMode
+        motionSensitivity = nextSensitivity
+        configuredStartDelayMs = nextStartDelay
+        configuredRejectionHoldMs = nextRejectionHold
+        sleepingIndicator = nextSleepingIndicator
+        logDiagnostic("config_loaded", "info", {
+            presence_mode: presenceMode,
+            motion_sensitivity: motionSensitivity,
+            start_delay_ms: configuredStartDelayMs,
+            rejection_hold_ms: configuredRejectionHoldMs,
+            sleeping_indicator: sleepingIndicator
+        })
+
+        if (modeChanged && lockService && compatible && lockService.locked
+            && status === "sleeping") enterSleeping("configuration_changed")
+    }
+
     onOverlayStateChanged: {
         verifyingWordTransition.stop()
         verifyingWordOpacity = 0.9
@@ -133,12 +211,18 @@ Item {
             generation: lockGeneration,
             compatible: compatible,
             pam_configured: pamConfigured,
-            grace_ms: 3000
+            grace_ms: configuredStartDelayMs,
+            presence_mode: presenceMode
         })
         retryTimer.stop()
         startTimer.stop()
+        rejectionHoldTimer.stop()
+        presenceStartTimer.stop()
+        presenceReleaseTimer.stop()
         successUnlockTimer.stop()
         postUnlockWakeTimer.stop()
+        inputWakeArmed = false
+        stopPresenceWatcher()
         abortAttempt()
         ensureLayerRule()
 
@@ -161,7 +245,12 @@ Item {
         lockGeneration += 1
         retryTimer.stop()
         startTimer.stop()
+        rejectionHoldTimer.stop()
+        presenceStartTimer.stop()
+        presenceReleaseTimer.stop()
         successUnlockTimer.stop()
+        inputWakeArmed = false
+        stopPresenceWatcher()
         abortAttempt()
         status = compatible && pamConfigured ? "idle" : "unavailable"
     }
@@ -176,6 +265,8 @@ Item {
         if (!lockService || !compatible || !pamConfigured || !lockService.locked) return
         if (lockService.authenticatingPassword || authenticating || facePam.active) return
 
+        presenceStartTimer.stop()
+        stopPresenceWatcher()
         attemptGeneration = lockGeneration
         authenticating = true
         status = "checking"
@@ -189,20 +280,62 @@ Item {
             })
             authenticating = false
             attemptGeneration = -1
-            scheduleRetry()
+            enterSleeping("pam_start_failed")
         }
     }
 
-    function scheduleRetry(nextStatus) {
+    function stopPresenceWatcher() {
+        waitingForPresenceExit = false
+        presenceGeneration = -1
+        if (presenceProcess.running) presenceProcess.running = false
+    }
+
+    function enterSleeping(reason) {
         if (!lockService || !compatible || !pamConfigured || !lockService.locked) return
         if (lockService.authenticatingPassword) return
-        status = nextStatus || "waiting"
-        logDiagnostic("retry_scheduled", "warning", {
+        retryTimer.stop()
+        rejectionHoldTimer.stop()
+        presenceStartTimer.stop()
+        inputWakeArmed = false
+        stopPresenceWatcher()
+
+        if (presenceMode === "continuous") {
+            status = "waiting"
+            logDiagnostic("retry_scheduled", "warning", {
+                generation: lockGeneration,
+                reason: reason || "unspecified",
+                delay_ms: configuredRejectionHoldMs
+            })
+            retryTimer.restart()
+            return
+        }
+
+        status = "sleeping"
+        logDiagnostic("sleeping_entered", "info", {
             generation: lockGeneration,
-            next_status: status,
-            delay_ms: 2500
+            reason: reason || "unspecified",
+            presence_mode: presenceMode
         })
-        retryTimer.restart()
+        if (presenceMode === "low_power") presenceStartTimer.restart()
+    }
+
+    function wakeFromPresence(source) {
+        if (!lockService || !compatible || !pamConfigured || !lockService.locked) return
+        if (status !== "sleeping" || lockService.authenticatingPassword) return
+        status = "waking"
+        inputWakeArmed = false
+        presenceStartTimer.stop()
+        logDiagnostic("sleeping_wake_requested", "info", {
+            generation: lockGeneration,
+            source: source
+        })
+        presenceGeneration = -1
+        if (presenceProcess.running) {
+            waitingForPresenceExit = true
+            presenceProcess.running = false
+        } else {
+            presenceReleaseTimer.restart()
+        }
     }
 
     function handleAttemptFinished(result) {
@@ -229,10 +362,21 @@ Item {
             return
         }
 
-        if (result === PamResult.Failed || result === PamResult.MaxTries)
-            scheduleRetry("unauthorized")
-        else
-            scheduleRetry()
+        if (result === PamResult.Failed || result === PamResult.MaxTries) {
+            status = "unauthorized"
+            if (presenceMode === "continuous") {
+                logDiagnostic("retry_scheduled", "warning", {
+                    generation: lockGeneration,
+                    reason: "face_rejected",
+                    delay_ms: configuredRejectionHoldMs
+                })
+                retryTimer.restart()
+            } else {
+                rejectionHoldTimer.restart()
+            }
+        } else {
+            enterSleeping("pam_result_unavailable")
+        }
     }
 
     function ensureLayerRule() {
@@ -282,11 +426,15 @@ Item {
                 })
                 startTimer.stop()
                 retryTimer.stop()
+                rejectionHoldTimer.stop()
+                presenceStartTimer.stop()
+                presenceReleaseTimer.stop()
                 successUnlockTimer.stop()
+                root.stopPresenceWatcher()
                 root.abortAttempt()
                 root.status = "password"
             } else {
-                root.scheduleRetry()
+                root.enterSleeping("password_finished")
             }
         }
     }
@@ -298,13 +446,26 @@ Item {
 
         onCompleted: function(result) { root.handleAttemptFinished(result) }
         onError: function(error) {
+            var completedGeneration = root.attemptGeneration
             root.logDiagnostic("attempt_error", "error", {
-                generation: root.attemptGeneration
+                generation: completedGeneration,
+                category: "no_face_or_unavailable"
             })
             root.authenticating = false
             root.attemptGeneration = -1
-            root.scheduleRetry()
+            if (completedGeneration === root.lockGeneration)
+                root.enterSleeping("no_face_or_unavailable")
         }
+    }
+
+    FileView {
+        id: userConfigFile
+        path: root.userConfigPath
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.loadUserConfig(text())
+        onLoadFailed: root.loadUserConfig("")
+        onFileChanged: reload()
     }
 
     FileView {
@@ -335,7 +496,7 @@ Item {
     // remains available throughout this grace period.
     Timer {
         id: startTimer
-        interval: 3000
+        interval: root.configuredStartDelayMs
         repeat: false
         onTriggered: root.startAttempt()
     }
@@ -354,9 +515,53 @@ Item {
 
     Timer {
         id: retryTimer
-        interval: 2500
+        interval: root.configuredRejectionHoldMs
         repeat: false
         onTriggered: root.startAttempt()
+    }
+
+    Timer {
+        id: rejectionHoldTimer
+        interval: root.configuredRejectionHoldMs
+        repeat: false
+        onTriggered: root.enterSleeping("face_rejected")
+    }
+
+    // Let PAM fully release the camera before the low-rate watcher opens it.
+    Timer {
+        id: presenceStartTimer
+        interval: 300
+        repeat: false
+        onTriggered: {
+            if (root.status !== "sleeping" || root.presenceMode !== "low_power") return
+            root.presenceGeneration = root.lockGeneration
+            if (!presenceProcess.running) presenceProcess.running = true
+        }
+    }
+
+    // The watcher exits only after dropping its GStreamer pipeline. This short
+    // handoff keeps Gaze from racing it for the same camera.
+    Timer {
+        id: presenceReleaseTimer
+        interval: 250
+        repeat: false
+        onTriggered: root.startAttempt()
+    }
+
+    IdleMonitor {
+        id: inputActivityMonitor
+        enabled: root.lockService && root.compatible && root.pamConfigured
+            && root.lockService.locked && root.status === "sleeping"
+        timeout: 1
+        respectInhibitors: false
+        onIsIdleChanged: {
+            if (!enabled) return
+            if (isIdle) {
+                root.inputWakeArmed = true
+            } else if (root.inputWakeArmed) {
+                root.wakeFromPresence("input_activity")
+            }
+        }
     }
 
     Timer {
@@ -439,6 +644,38 @@ Item {
         command: ["/usr/bin/pw-play", root.dingPath]
     }
 
+    Process {
+        id: presenceProcess
+        command: [root.presenceHelperPath, "--config", root.userConfigPath]
+        onStarted: root.logDiagnostic("presence_watcher_started", "info", {
+            generation: root.presenceGeneration,
+            motion_sensitivity: root.motionSensitivity
+        })
+        onExited: function(exitCode, exitStatus) {
+            var watchedGeneration = root.presenceGeneration
+            root.presenceGeneration = -1
+            if (root.waitingForPresenceExit && root.status === "waking") {
+                root.waitingForPresenceExit = false
+                presenceReleaseTimer.restart()
+                return
+            }
+            if (root.status !== "sleeping" || root.presenceMode !== "low_power"
+                || watchedGeneration !== root.lockGeneration) return
+            if (exitCode === 0 || exitCode === 10) {
+                root.logDiagnostic("presence_motion_detected", "info", {
+                    generation: watchedGeneration,
+                    used_fallback_camera: exitCode === 10
+                })
+                root.wakeFromPresence("camera_motion")
+            } else {
+                root.logDiagnostic("presence_watcher_unavailable", "warning", {
+                    generation: watchedGeneration,
+                    exit_code: exitCode
+                })
+            }
+        }
+    }
+
     Variants {
         model: Quickshell.screens
 
@@ -462,15 +699,19 @@ Item {
                 y: Math.max(36, parent.height * 0.5 - height - 74)
 
                 readonly property bool checking: root.overlayState === "checking"
+                readonly property bool waking: root.overlayState === "waking"
+                readonly property bool sleeping: root.overlayState === "sleeping"
                 readonly property bool unauthorized: root.overlayState === "unauthorized"
                 readonly property bool success: root.overlayState === "success"
                 readonly property color lockedColor: Util.alpha(Color.lock.text, 0.58)
                 readonly property color unlockedColor: Color.lock.borderActive
                 readonly property color checkingColor: Color.lock.borderActive
                 readonly property color waitingColor: Color.accent
+                readonly property color sleepingColor: Util.alpha(Color.lock.text, 0.32)
                 readonly property color activeColor: success ? unlockedColor
                     : unauthorized ? lockedColor
-                    : checking ? checkingColor : waitingColor
+                    : sleeping ? sleepingColor
+                    : checking || waking ? checkingColor : waitingColor
                 property int sweepIndex: 0
                 property int glanceIndex: 0
                 property int glanceStep: 0
@@ -497,6 +738,7 @@ Item {
                             opacity: {
                                 if (indicator.success) return 0.8
                                 if (indicator.unauthorized) return 0.72
+                                if (indicator.sleeping) return 0.09
                                 if (!indicator.checking) return 0.2
                                 const distance = (index - indicator.sweepIndex + 72) % 72
                                 return distance < 10 ? 0.92 - distance * 0.075 : 0.13
@@ -527,7 +769,7 @@ Item {
                     height: 76
                     x: 72 + indicator.glanceIndex * 3
                     y: 62
-                    opacity: indicator.success ? 0 : 1
+                    opacity: indicator.success ? 0 : indicator.sleeping ? 0.42 : 1
                     scale: indicator.checking ? 1.05 : 1
 
                     Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
@@ -623,16 +865,20 @@ Item {
                     y: 212
                     text: indicator.success ? "UNLOCKED"
                         : indicator.unauthorized ? "LOCKED"
+                        : indicator.sleeping ? "STANDBY"
+                        : indicator.waking ? "WAKING"
                         : indicator.checking ? root.verifyingWord : "LOOK AT THE CAMERA"
                     color: indicator.unauthorized ? indicator.lockedColor
                         : indicator.success ? indicator.unlockedColor
-                        : indicator.checking ? indicator.checkingColor
+                        : indicator.sleeping ? indicator.sleepingColor
+                        : indicator.checking || indicator.waking ? indicator.checkingColor
                         : Color.lock.text
                     font.family: Style.font.family
                     font.pixelSize: Math.max(16, Style.font.caption + 3)
                     font.bold: true
                     font.letterSpacing: 1.8
-                    opacity: indicator.checking ? root.verifyingWordOpacity : 0.9
+                    opacity: indicator.checking ? root.verifyingWordOpacity
+                        : indicator.sleeping ? 0.58 : 0.9
                 }
 
                 Timer {
@@ -644,7 +890,7 @@ Item {
 
                 Timer {
                     interval: 860
-                    running: indicator.visible && !indicator.success
+                    running: indicator.visible && !indicator.success && !indicator.sleeping
                     repeat: true
                     onTriggered: {
                         const sequence = [-1, 0, 1, 0]
@@ -656,7 +902,7 @@ Item {
                 Timer {
                     id: blinkTimer
                     interval: 2800
-                    running: indicator.visible && !indicator.success
+                    running: indicator.visible && !indicator.success && !indicator.sleeping
                     repeat: true
                     onTriggered: {
                         indicator.blinking = true
@@ -683,14 +929,16 @@ Item {
                 pamConfigured: root.pamConfigured,
                 enrolledUser: root.userName,
                 authenticating: root.authenticating,
+                presenceMode: root.presenceMode,
                 state: root.status
             })
         }
 
         function preview(state: string): string {
             if (root.lockService && root.compatible && root.lockService.locked) return "locked"
-            if (state !== "waiting" && state !== "checking"
-                && state !== "unauthorized" && state !== "success")
+            if (state !== "waiting" && state !== "waking" && state !== "sleeping"
+                && state !== "checking" && state !== "unauthorized"
+                && state !== "success")
                 state = "checking"
             root.overlayPreviewState = state
             root.overlayPreviewVisible = true

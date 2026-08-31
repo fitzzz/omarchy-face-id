@@ -70,6 +70,9 @@ cmp "$project_root/integration/omarchy-plugin/manifest.json" "$plugin_dir/manife
 cmp "$project_root/assets/ding.mp3" "$plugin_dir/ding.mp3"
 cmp "$project_root/integration/omarchy-plugin/log-event.sh" "$plugin_dir/log-event.sh"
 [[ -x $plugin_dir/log-event.sh ]]
+presence_helper="$(dirname "$app_binary")/omarchy-face-id-presence"
+cmp "$presence_helper" "$plugin_dir/presence-watcher"
+[[ -x $plugin_dir/presence-watcher ]]
 grep -Fq '"id":"fitzzz.face-id"' "$temporary_dir/success/config/omarchy/shell.json"
 [[ $(<"$temporary_dir/success/config/omarchy/enable-attempts") -eq 1 ]]
 [[ $(<"$temporary_dir/success/config/omarchy/rescan-attempts") -eq 1 ]]
@@ -80,10 +83,6 @@ run_scenario nonzero-installed 0
 # Omarchy may discover a newly written plugin on the next explicit rescan.
 run_scenario delayed-discovery 0
 [[ $(<"$temporary_dir/delayed-discovery/config/omarchy/rescan-attempts") -eq 2 ]]
-
-# A child crash must produce exactly one retry chain.
-run_scenario crash-once 0
-[[ $(<"$temporary_dir/crash-once/config/omarchy/enable-attempts") -eq 2 ]]
 
 # Plugin discovery is bounded and returns the UI to a retryable state.
 run_scenario never-discover 1

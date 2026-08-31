@@ -42,6 +42,12 @@ qt_add_executable(omarchy-face-id
     app/main.cpp
 )
 
+qt_add_executable(omarchy-face-id-presence
+    presence/main.cpp
+    app/DiagnosticLog.cpp
+    app/DiagnosticLog.h
+)
+
 qt_add_qml_module(omarchy-face-id
     URI FaceId
     VERSION 1.0
@@ -59,6 +65,7 @@ qt_add_resources(omarchy-face-id "face_id_integration"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES
         assets/ding.mp3
+        config/default-config.toml
         integration/omarchy-plugin/Service.qml
         integration/omarchy-plugin/log-event.sh
         integration/omarchy-plugin/manifest.json
@@ -76,6 +83,14 @@ target_link_libraries(omarchy-face-id PRIVATE
     PkgConfig::GSTREAMER
 )
 
+target_link_libraries(omarchy-face-id-presence PRIVATE
+    Qt6::Core
+    PkgConfig::GSTREAMER
+)
+target_include_directories(omarchy-face-id-presence PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/app
+)
+
 target_compile_definitions(omarchy-face-id PRIVATE
     OMARCHY_FACE_ID_VERSION="${PROJECT_VERSION}"
 )
@@ -83,6 +98,9 @@ target_compile_definitions(omarchy-face-id PRIVATE
 install(TARGETS omarchy-face-id
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
+)
+install(TARGETS omarchy-face-id-presence
+    RUNTIME DESTINATION libexec
 )
 install(FILES packaging/io.omarchy.FaceId.desktop
     DESTINATION share/applications
@@ -94,7 +112,7 @@ include(CTest)
 if(BUILD_TESTING)
     add_test(NAME qml-smoke COMMAND omarchy-face-id --smoke-test)
     set_tests_properties(qml-smoke PROPERTIES ENVIRONMENT
-        "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+        "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OMARCHY_FACE_ID_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/test-config;XDG_STATE_HOME=${CMAKE_CURRENT_BINARY_DIR}/test-state"
     )
     add_test(NAME packaging-script
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_packaging_script.sh
@@ -119,6 +137,14 @@ if(BUILD_TESTING)
     add_test(NAME diagnostics-log
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_diagnostics_log.sh
             $<TARGET_FILE:omarchy-face-id>
+    )
+    add_test(NAME user-config
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_user_config.sh
+            $<TARGET_FILE:omarchy-face-id>
+    )
+    add_test(NAME presence-watcher
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_presence_watcher.sh
+            $<TARGET_FILE:omarchy-face-id-presence>
     )
     add_test(NAME lock-integration
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lock_integration.sh
