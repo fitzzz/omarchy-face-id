@@ -12,6 +12,8 @@ grep -Fq '"$expected_gaze_receipt") gaze_ownership=legacy' "$script"
 grep -Fq '"$expected_gaze_aur_receipt") gaze_ownership=aur' "$script"
 grep -Fq 'sudo pacman -Rns --noconfirm gaze' "$script"
 grep -Fq 'gaze uninstall --yes' "$script"
+grep -Fq 'omarchy pkg drop gst-plugins-good' "$script"
+grep -Fq "expected_camera_support_receipt='omarchy-face-id:camera-support:gst-plugins-good'" "$script"
 grep -Fq 'Your password will not change.' "$script"
 
 owned_line=$(grep -n 'if ((gaze_owned)); then' "$script" | tail -1 | cut -d: -f1)
@@ -49,6 +51,9 @@ EOF
     cat >"$sandbox/bin/pacman" <<'EOF'
 #!/usr/bin/env bash
 printf 'pacman %s\n' "$*" >>"$TEST_LOG"
+if [[ $1 == -Q && $2 == gst-plugins-good && ${CAMERA_PACKAGE_PRESENT:-0} == 1 ]]; then
+    exit 0
+fi
 [[ $1 == -Q && $2 == gaze ]]
 EOF
     cat >"$sandbox/bin/sudo" <<'EOF'
@@ -63,6 +68,9 @@ EOF
     elif [[ $mode == aur_owned ]]; then
         printf '%s\n' 'omarchy-face-id:gaze-aur:gaze-bin' \
             >"$sandbox/ownership/gaze-installed"
+    elif [[ $mode == camera_owned ]]; then
+        printf '%s\n' 'omarchy-face-id:camera-support:gst-plugins-good' \
+            >"$sandbox/ownership/camera-support-installed"
     fi
 
     TEST_LOG="$sandbox/actions.log" \
@@ -72,6 +80,7 @@ EOF
     OMARCHY_FACE_ID_PAM_PATH="$sandbox/pam" \
     OMARCHY_FACE_ID_OWNERSHIP_DIR="$sandbox/ownership" \
     OMARCHY_FACE_ID_SKIP_LOCK_CHECK=1 \
+    CAMERA_PACKAGE_PRESENT="$([[ $mode == camera_owned ]] && echo 1 || echo 0)" \
         "$script" --yes >"$sandbox/output.log"
 }
 
@@ -96,3 +105,11 @@ grep -Fq 'sudo rm -rf -- /etc/gaze /var/cache/gaze /var/lib/gaze' \
 
 run_case aur_owned
 grep -Fq 'gaze uninstall --yes' "$temporary_dir/aur_owned/actions.log"
+
+run_case camera_owned
+grep -Fq 'omarchy pkg drop gst-plugins-good' \
+    "$temporary_dir/camera_owned/actions.log"
+if grep -Fq 'gaze uninstall --yes' "$temporary_dir/camera_owned/actions.log"; then
+    echo "A pre-existing Gaze installation would be removed with camera support." >&2
+    exit 1
+fi

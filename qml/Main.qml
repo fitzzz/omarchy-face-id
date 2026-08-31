@@ -48,6 +48,7 @@ ApplicationWindow {
         && ["camera-failed", "db-failed", "cancelled"].indexOf(gazeClient.enrollmentPrompt) >= 0
     readonly property bool gazeReady: gazeClient.installed
         && gazeClient.serviceAvailable
+        && gazeClient.cameraSupportAvailable
         && gazeClient.cameraAvailable
 
     function friendlyPrompt(prompt) {
@@ -77,13 +78,15 @@ ApplicationWindow {
 
     function readinessTitle() {
         if (gazeClient.faceSetupInstalling)
-            return gazeClient.installed
-                ? "Starting Gaze Service…"
-                : "Installing Gaze Package…"
+            return !gazeClient.installed ? "Installing Gaze Package…"
+                : !gazeClient.cameraSupportAvailable
+                    ? "Installing Camera Support…" : "Starting Gaze Service…"
         if (gazeReady)
             return "Camera Ready"
         if (!gazeClient.installed)
             return "Install Gaze from AUR"
+        if (!gazeClient.cameraSupportAvailable)
+            return "Complete Camera Setup"
         if (!gazeClient.serviceAvailable)
             return "Face Scanning Is Offline"
         return "Camera Unavailable"
@@ -98,6 +101,8 @@ ApplicationWindow {
             return "Video is processed locally and is never saved."
         if (!gazeClient.installed)
             return "Gaze powers facial authentication with local liveness anti-spoofing and support for infrared (IR) cameras for secure authentication."
+        if (!gazeClient.cameraSupportAvailable)
+            return "Face ID needs one camera format component. Setup installs it through Omarchy."
         if (!gazeClient.serviceAvailable)
             return "Start the face-scanning service, then check again."
         return "Close other camera apps, then check again."
@@ -429,16 +434,19 @@ ApplicationWindow {
                                 text: "Check Again"
                                 visible: gazeClient.installed
                                     && gazeClient.serviceAvailable
+                                    && gazeClient.cameraSupportAvailable
                                     && !gazeClient.cameraAvailable
                                 onClicked: gazeClient.refresh()
                             }
                             ThemedActionButton {
                                 text: gazeClient.faceSetupInstalling
-                                    ? (gazeClient.installed ? "Starting…" : "Installing…")
-                                    : (gazeClient.installed
-                                        ? "Start Gaze Service"
-                                        : "Install Gaze Package")
+                                    ? "Installing…"
+                                    : !gazeClient.installed ? "Install Gaze Package"
+                                        : !gazeClient.cameraSupportAvailable
+                                            ? "Install Camera Support"
+                                            : "Start Gaze Service"
                                 visible: !gazeClient.installed
+                                    || !gazeClient.cameraSupportAvailable
                                     || !gazeClient.serviceAvailable
                                 primary: true
                                 enabled: !gazeClient.faceSetupInstalling
@@ -450,6 +458,7 @@ ApplicationWindow {
                                 forwardIcon: true
                                 visible: gazeClient.installed
                                     && gazeClient.serviceAvailable
+                                    && gazeClient.cameraSupportAvailable
                                 enabled: root.gazeReady
                                 onClicked: root.startEnrollment()
                             }

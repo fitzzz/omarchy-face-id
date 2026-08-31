@@ -21,6 +21,7 @@ class GazeClient final : public QObject
     Q_PROPERTY(bool installed READ installed NOTIFY availabilityChanged)
     Q_PROPERTY(bool serviceAvailable READ serviceAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool cameraAvailable READ cameraAvailable NOTIFY availabilityChanged)
+    Q_PROPERTY(bool cameraSupportAvailable READ cameraSupportAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool parallelPreviewAvailable READ parallelPreviewAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool faceSetupInstalling READ faceSetupInstalling NOTIFY faceSetupChanged)
     Q_PROPERTY(QString faceSetupError READ faceSetupError NOTIFY faceSetupChanged)
@@ -53,6 +54,7 @@ public:
     bool installed() const;
     bool serviceAvailable() const;
     bool cameraAvailable() const;
+    bool cameraSupportAvailable() const;
     bool parallelPreviewAvailable() const;
     bool faceSetupInstalling() const;
     QString faceSetupError() const;
@@ -135,6 +137,7 @@ private:
     bool m_installed = false;
     bool m_serviceAvailable = false;
     bool m_cameraAvailable = false;
+    bool m_cameraSupportAvailable = false;
     bool m_parallelPreviewAvailable = false;
     bool m_faceSetupInstalling = false;
     QString m_faceSetupError;

@@ -27,14 +27,14 @@ If a later Omarchy update changes the internal lock-service interface, Face ID f
 
 ## Install on Omarchy
 
-Send the user only the versioned `Omarchy_Face_ID-0.6.5-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system prompt is approved. The user never needs to know or enter a package command. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin`; it does not download, bundle, fork, or privately distribute Gaze. Normal Omarchy updates therefore keep the package current.
+Send the user only the versioned `Omarchy_Face_ID-0.6.6-x86_64.AppImage`. They double-click it like any other application. If its system component is missing, the Prepare step offers **Install Gaze Package**, opens Omarchy's standard package installer, and continues automatically after the system prompt is approved. The same screen detects and repairs missing camera-format support on machines where Gaze is already installed. Internally, the AppImage invokes `omarchy pkg aur add gaze-bin` and `omarchy pkg add gst-plugins-good`; it does not download, bundle, fork, or privately distribute either dependency. Normal Omarchy updates therefore keep both packages current.
 
-If Gaze was already installed, Face ID uses it without claiming ownership. If the wizard installs it, a root-owned receipt records that fact so Face ID's uninstaller can invoke Gaze's official cleanup and remove the package, its PAM additions, configuration, models, and saved biometric data. The official `gaze-bin` package currently enables Gaze in shared PAM surfaces such as sudo while preserving password fallback; the wizard labels the package installation explicitly rather than hiding that system change.
+If Gaze or `gst-plugins-good` was already installed, Face ID uses it without claiming ownership. Separate root-owned receipts record only the packages this wizard adds. Uninstall can therefore invoke Gaze's official cleanup and remove camera support without touching pre-existing packages. The official `gaze-bin` package currently enables Gaze in shared PAM surfaces such as sudo while preserving password fallback; the wizard labels the package installation explicitly rather than hiding that system change.
 
 ## Run the current AppImage
 
 ```bash
-./dist/Omarchy_Face_ID-0.6.5-x86_64.AppImage
+./dist/Omarchy_Face_ID-0.6.6-x86_64.AppImage
 ```
 
 The wizard enrolls the face and offers to enable the lock-screen subscriber. A short completion sound plays after enrollment and after each successful Face ID unlock. Then lock the computer and look directly at the camera. Face ID appears after three seconds. While scanning, the lock screen cross-fades through a rotating set of short processing words every two seconds. It uses the active Omarchy lock-screen theme for every state. When nobody is present, it settles into a subtle Standby state instead of scanning forever. The default low-power watcher samples a tiny local stream at 2 FPS and wakes one new attempt when it sees movement; frames remain in memory and are never saved. Password entry stays available throughout.
@@ -50,10 +50,10 @@ The setup app records privacy-safe structured events in `~/.local/state/omarchy-
 Run the full uninstaller from the AppImage as your normal user:
 
 ```bash
-./dist/Omarchy_Face_ID-0.6.5-x86_64.AppImage --uninstall
+./dist/Omarchy_Face_ID-0.6.6-x86_64.AppImage --uninstall
 ```
 
-From a source checkout, `./scripts/uninstall.sh` runs the same command. It removes the saved `default` face enrollment, the dedicated face-only PAM service, and the Omarchy lock-screen subscriber. It removes Gaze only when Omarchy Face ID's root-owned installation receipt proves this project installed it. A Gaze installation that existed before setup is kept. Your password configuration is never removed or replaced. Delete the portable AppImage file afterward if it was not managed by an AppImage installer.
+From a source checkout, `./scripts/uninstall.sh` runs the same command. It removes the saved `default` face enrollment, the dedicated face-only PAM service, and the Omarchy lock-screen subscriber. It removes Gaze and camera support only when their separate root-owned receipts prove this project installed them. Pre-existing packages are kept. Your password configuration is never removed or replaced. Delete the portable AppImage file afterward if it was not managed by an AppImage installer.
 
 The package intentionally uses the Qt 6 libraries already supplied by Omarchy; bundling a second Linux multimedia stack caused loader conflicts during testing.
 

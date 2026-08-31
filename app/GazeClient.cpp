@@ -83,6 +83,22 @@ QString enrollmentReceiptPath()
     return stateRoot + QStringLiteral("/omarchy-face-id/enrolled-face");
 }
 
+bool jpegDecoderAvailable()
+{
+    const QString testMarker = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_JPEG_DECODER_MARKER");
+    if (!testMarker.isEmpty())
+        return QFileInfo(testMarker).isFile();
+
+    gst_init(nullptr, nullptr);
+    gst_registry_scan_path(gst_registry_get(), "/usr/lib/gstreamer-1.0");
+    GstElementFactory *factory = gst_element_factory_find("jpegdec");
+    if (!factory)
+        return false;
+    gst_object_unref(factory);
+    return true;
+}
+
 QByteArray resourceContents(const QString &path)
 {
     QFile file(path);
@@ -196,12 +212,12 @@ GazeClient::GazeClient(QObject *parent)
             if (result == QStringLiteral("failure")) {
                 finishFaceSetup(
                     false,
-                    QStringLiteral("The Gaze package was not installed. Try again."));
+                    QStringLiteral("Face ID system setup did not finish. Try again."));
                 return;
             }
             if (result == QStringLiteral("success")) {
                 refresh();
-                if (m_installed && m_serviceAvailable) {
+                if (m_installed && m_serviceAvailable && m_cameraSupportAvailable) {
                     finishFaceSetup(true);
                     return;
                 }
@@ -268,6 +284,7 @@ GazeClient::~GazeClient()
 bool GazeClient::installed() const { return m_installed; }
 bool GazeClient::serviceAvailable() const { return m_serviceAvailable; }
 bool GazeClient::cameraAvailable() const { return m_cameraAvailable; }
+bool GazeClient::cameraSupportAvailable() const { return m_cameraSupportAvailable; }
 bool GazeClient::parallelPreviewAvailable() const { return m_parallelPreviewAvailable; }
 bool GazeClient::faceSetupInstalling() const { return m_faceSetupInstalling; }
 QString GazeClient::faceSetupError() const { return m_faceSetupError; }
@@ -361,10 +378,12 @@ void GazeClient::refresh()
     const bool wasInstalled = m_installed;
     const bool wasAvailable = m_serviceAvailable;
     const bool wasCameraAvailable = m_cameraAvailable;
+    const bool wasCameraSupportAvailable = m_cameraSupportAvailable;
     const bool wasParallelPreviewAvailable = m_parallelPreviewAvailable;
 
     m_installed = QFileInfo(qEnvironmentVariable(
         "OMARCHY_FACE_ID_GAZE_PATH", QStringLiteral("/usr/bin/gaze"))).isExecutable();
+    m_cameraSupportAvailable = jpegDecoderAvailable();
     auto *busInterface = QDBusConnection::systemBus().interface();
     const QDBusReply<bool> registered = busInterface
         ? busInterface->isServiceRegistered(QString::fromLatin1(serviceName))
@@ -387,6 +406,7 @@ void GazeClient::refresh()
 
     if (wasInstalled != m_installed || wasAvailable != m_serviceAvailable
         || wasCameraAvailable != m_cameraAvailable
+        || wasCameraSupportAvailable != m_cameraSupportAvailable
         || wasParallelPreviewAvailable != m_parallelPreviewAvailable) {
         m_diagnostics.record(
             QStringLiteral("app.environment"),
@@ -396,6 +416,8 @@ void GazeClient::refresh()
              {QStringLiteral("package_version"), installedGazeVersion()},
              {QStringLiteral("service_available"), m_serviceAvailable},
              {QStringLiteral("camera_available"), m_cameraAvailable},
+             {QStringLiteral("camera_support_available"),
+              m_cameraSupportAvailable},
              {QStringLiteral("parallel_preview_eligible"),
               m_parallelPreviewAvailable}});
         emit availabilityChanged();
@@ -411,7 +433,7 @@ void GazeClient::installFaceSetup()
                          QStringLiteral("setup_requested"));
 
     refresh();
-    if (m_installed && m_serviceAvailable) {
+    if (m_installed && m_serviceAvailable && m_cameraSupportAvailable) {
         m_faceSetupError.clear();
         emit faceSetupChanged();
         return;
@@ -528,6 +550,16 @@ void GazeClient::beginEnrollment(const QString &faceName)
             DiagnosticLog::Level::Error,
             {{QStringLiteral("reason"), QStringLiteral("service_unavailable")}});
         setError(QStringLiteral("The Gaze system service is not available."));
+        return;
+    }
+    if (!m_cameraSupportAvailable) {
+        m_diagnostics.record(
+            QStringLiteral("enrollment.workflow"),
+            QStringLiteral("start_rejected"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("reason"),
+              QStringLiteral("camera_support_unavailable")}});
+        setError(QStringLiteral("Required camera support is not installed."));
         return;
     }
 

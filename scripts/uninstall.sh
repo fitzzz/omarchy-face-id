@@ -9,8 +9,10 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-face-id"
 face_receipt="$state_dir/enrolled-face"
 ownership_dir="${OMARCHY_FACE_ID_OWNERSHIP_DIR:-/var/lib/omarchy-face-id}"
 gaze_receipt="$ownership_dir/gaze-installed"
+camera_support_receipt="$ownership_dir/camera-support-installed"
 expected_gaze_receipt='omarchy-face-id:gaze:0.2.12-1'
 expected_gaze_aur_receipt='omarchy-face-id:gaze-aur:gaze-bin'
+expected_camera_support_receipt='omarchy-face-id:camera-support:gst-plugins-good'
 assume_yes=0
 
 usage() {
@@ -64,6 +66,11 @@ if [[ -f $gaze_receipt ]]; then
 fi
 gaze_owned=0
 [[ $gaze_ownership == none ]] || gaze_owned=1
+camera_support_owned=0
+if [[ -f $camera_support_receipt ]] \
+    && [[ $(<"$camera_support_receipt") == "$expected_camera_support_receipt" ]]; then
+    camera_support_owned=1
+fi
 
 face_name=""
 if [[ -f $face_receipt ]]; then
@@ -95,6 +102,9 @@ if ((assume_yes == 0)); then
         echo "The Gaze package will also be removed because Face ID installed it."
     else
         echo "Your existing Gaze installation will remain installed."
+    fi
+    if ((camera_support_owned)); then
+        echo "The camera-support package will also be removed because Face ID installed it."
     fi
     read -r -p "Continue? [y/N] " answer
     [[ $answer == y || $answer == Y ]] || exit 0
@@ -133,6 +143,20 @@ if ((gaze_owned)); then
     fi
     sudo rm -rf -- /etc/gaze /var/cache/gaze /var/lib/gaze >/dev/null 2>&1 || true
     sudo unlink "$gaze_receipt" 2>/dev/null || true
+    sudo rmdir "$ownership_dir" 2>/dev/null || true
+fi
+
+if ((camera_support_owned)); then
+    camera_support_removed=1
+    if pacman -Q gst-plugins-good >/dev/null 2>&1; then
+        if ! omarchy pkg drop gst-plugins-good; then
+            camera_support_removed=0
+            echo "Camera support is still needed by another package, so it was kept."
+        fi
+    fi
+    if ((camera_support_removed)); then
+        sudo unlink "$camera_support_receipt" 2>/dev/null || true
+    fi
     sudo rmdir "$ownership_dir" 2>/dev/null || true
 fi
 
