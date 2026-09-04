@@ -1428,6 +1428,7 @@ void GazeClient::continueLockIntegrationInstall()
         return;
     }
 
+    m_lockPluginDiscoveryElapsed.start();
     startLockPluginRescan();
 }
 
@@ -1507,6 +1508,29 @@ void GazeClient::startLockPluginEnable()
             exitStatus == QProcess::NormalExit && exitCode == 0
                 ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
             {{QStringLiteral("exit_code"), exitCode}});
+        // rescanPlugins acknowledges the request before the asynchronous
+        // registry scan completes. Keep enabling until discovery catches up;
+        // a restarted shell also needs the enable operation, not just status.
+        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+            const int configured = qEnvironmentVariableIntValue(
+                m_lockRestartAttempted
+                    ? "OMARCHY_FACE_ID_FALLBACK_VERIFY_TIMEOUT_MS"
+                    : "OMARCHY_FACE_ID_DISCOVERY_TIMEOUT_MS");
+            const int budget = configured > 0 ? configured
+                : (m_lockRestartAttempted ? 30000 : 3000);
+            const qint64 elapsed = m_lockRestartAttempted
+                ? m_lockRestartVerificationElapsed.elapsed()
+                : m_lockPluginDiscoveryElapsed.elapsed();
+            if (elapsed < budget) {
+                QTimer::singleShot(100, this, [this] {
+                    if (m_lockIntegrationInstalling
+                        && m_lockActivationPhase == LockActivationPhase::Enabling
+                        && !m_lockPluginEnableProcess)
+                        startLockPluginEnable();
+                });
+                return;
+            }
+        }
         startLockShellVerification();
     };
     connect(process,
@@ -1560,7 +1584,7 @@ void GazeClient::startLockShellRestart()
     QTimer::singleShot(200, this, [this] {
         if (m_lockIntegrationInstalling
             && m_lockActivationPhase == LockActivationPhase::Reloading)
-            startLockShellVerification();
+            startLockPluginEnable();
     });
 }
 

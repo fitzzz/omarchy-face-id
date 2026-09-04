@@ -195,6 +195,7 @@ private:
     QElapsedTimer m_lockActivationElapsed;
     QElapsedTimer m_lockPhaseElapsed;
     QElapsedTimer m_lockRestartVerificationElapsed;
+    QElapsedTimer m_lockPluginDiscoveryElapsed;
     QTimer m_lockActivationDeadline;
     QTemporaryFile *m_dingFile = nullptr;
     _GstElement *m_parallelPreviewPipeline = nullptr;

@@ -84,6 +84,7 @@ run_scenario() {
     OMARCHY_FACE_ID_CONFIG_ROOT="$scenario/config" \
     OMARCHY_FACE_ID_PAM_PATH="$scenario/pam-service" \
     OMARCHY_FACE_ID_ACTIVATION_TIMEOUT_MS="$activation_timeout" \
+    OMARCHY_FACE_ID_DISCOVERY_TIMEOUT_MS=400 \
     OMARCHY_FACE_ID_COMMAND_TIMEOUT_MS=120 \
     OMARCHY_FACE_ID_VERIFY_TIMEOUT_MS=120 \
     OMARCHY_FACE_ID_FALLBACK_VERIFY_TIMEOUT_MS="$fallback_timeout" \
@@ -214,3 +215,22 @@ run_scenario denied 1
 [[ ! -e $temporary_dir/denied/config/omarchy/plugins/fitzzz.face-id ]]
 run_scenario hang 1
 [[ ! -e $temporary_dir/hang/config/omarchy/plugins/fitzzz.face-id ]]
+
+# An IPC acknowledgement is not a completed registry scan. Retry enabling
+# without restarting a healthy shell, and re-enable after a fallback restart.
+run_scenario discovery-async 0
+[[ $(<"$temporary_dir/discovery-async/config/omarchy/enable-attempts") -gt 1 ]]
+[[ ! -e $temporary_dir/discovery-async/config/omarchy/restart-attempts ]]
+assert_no_transaction_debris discovery-async
+
+run_scenario discovery-after-restart 0
+[[ $(<"$temporary_dir/discovery-after-restart/config/omarchy/restart-attempts") -eq 1 ]]
+[[ -f $temporary_dir/discovery-after-restart/config/omarchy/shell.json ]]
+assert_no_transaction_debris discovery-after-restart
+
+# A permanently undiscoverable plugin still fails within the budgets and
+# rolls back instead of looping forever or claiming activation succeeded.
+run_scenario discovery-never-ready 1
+[[ ! -e $temporary_dir/discovery-never-ready/config/omarchy/plugins/fitzzz.face-id ]]
+[[ $(<"$temporary_dir/discovery-never-ready/config/omarchy/restart-attempts") -eq 1 ]]
+assert_no_transaction_debris discovery-never-ready
