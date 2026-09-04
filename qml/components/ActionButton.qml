@@ -7,6 +7,8 @@ import QtQuick.Shapes
 Button {
     id: control
 
+    hoverEnabled: true
+
     property bool primary: false
     property color accentColor: "#65d1a7"
     property color textColor: primary ? "#10201a" : "#d5ddd8"
@@ -85,7 +87,9 @@ Button {
         color: control.quiet
             ? (control.hovered ? control.hoverColor : "transparent")
             : control.primary
-            ? (control.down ? Qt.darker(control.accentColor, 1.14) : control.accentColor)
+            ? (control.down ? Qt.darker(control.accentColor, 1.14)
+                : control.hovered ? Qt.lighter(control.accentColor, 1.08)
+                    : control.accentColor)
             : (control.hovered ? control.hoverColor : control.surfaceColor)
         border.width: control.primary || control.quiet ? 0 : 1
         border.color: control.borderColor

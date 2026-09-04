@@ -1,10 +1,10 @@
 import QtQuick
-import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pam
 import Quickshell.Wayland
 import qs.Commons
+import "LockState.js" as LockState
 
 // Adds face authentication beside Omarchy's existing password flow without
 // replacing the first-party lock screen or changing its password PAM service.
@@ -320,8 +320,9 @@ Item {
     }
 
     function wakeFromPresence(source) {
-        if (!lockService || !compatible || !pamConfigured || !lockService.locked) return
-        if (status !== "sleeping" || lockService.authenticatingPassword) return
+        if (!lockService || !compatible || !pamConfigured) return
+        if (!LockState.canWake(status, lockService.locked,
+                               lockService.authenticatingPassword)) return
         status = "waking"
         inputWakeArmed = false
         presenceStartTimer.stop()
@@ -343,15 +344,17 @@ Item {
         authenticating = false
         attemptGeneration = -1
 
-        if (completedGeneration !== lockGeneration) return
-        if (!lockService || !compatible || !lockService.locked) return
+        if (!lockService || !compatible) return
+        if (!LockState.acceptsAttemptResult(completedGeneration, lockGeneration,
+                                            lockService.locked)) return
 
         logDiagnostic("attempt_finished", result === PamResult.Success ? "info" : "warning", {
             generation: completedGeneration,
             result: pamResultName(result)
         })
 
-        if (result === PamResult.Success) {
+        const nextState = LockState.stateAfterAttempt(pamResultName(result), presenceMode)
+        if (nextState === "success") {
             status = "success"
             root.playDing()
             // The existing Omarchy lock remains the sole owner of the session
@@ -362,9 +365,9 @@ Item {
             return
         }
 
-        if (result === PamResult.Failed || result === PamResult.MaxTries) {
+        if (nextState === "unauthorized" || nextState === "waiting") {
             status = "unauthorized"
-            if (presenceMode === "continuous") {
+            if (nextState === "waiting") {
                 logDiagnostic("retry_scheduled", "warning", {
                     generation: lockGeneration,
                     reason: "face_rejected",
@@ -533,7 +536,9 @@ Item {
         interval: 300
         repeat: false
         onTriggered: {
-            if (root.status !== "sleeping" || root.presenceMode !== "low_power") return
+            if (!root.lockService || !LockState.canStartPresence(
+                    root.status, root.presenceMode, root.lockService.locked,
+                    root.lockService.authenticatingPassword)) return
             root.presenceGeneration = root.lockGeneration
             if (!presenceProcess.running) presenceProcess.running = true
         }
@@ -570,9 +575,11 @@ Item {
         interval: 650
         repeat: false
         onTriggered: {
-            if (expectedGeneration !== root.lockGeneration) return
-            if (!root.lockService || !root.compatible || !root.lockService.locked) return
-            if (root.lockService.authenticatingPassword || root.status !== "success") return
+            if (!root.lockService || !root.compatible) return
+            if (!LockState.canFinishUnlock(expectedGeneration, root.lockGeneration,
+                                           root.lockService.locked,
+                                           root.lockService.authenticatingPassword,
+                                           root.status)) return
             root.logDiagnostic("unlock_handoff_requested", "info", {
                 generation: expectedGeneration
             })
@@ -659,8 +666,9 @@ Item {
                 presenceReleaseTimer.restart()
                 return
             }
-            if (root.status !== "sleeping" || root.presenceMode !== "low_power"
-                || watchedGeneration !== root.lockGeneration) return
+            if (!LockState.acceptsPresenceResult(root.status, root.presenceMode,
+                                                 watchedGeneration,
+                                                 root.lockGeneration)) return
             if (exitCode === 0 || exitCode === 10) {
                 root.logDiagnostic("presence_motion_detected", "info", {
                     generation: watchedGeneration,
@@ -673,6 +681,15 @@ Item {
                     exit_code: exitCode
                 })
             }
+        }
+    }
+
+    Component {
+        id: faceIdIndicatorComponent
+
+        FaceIdIndicator {
+            verifyingWord: root.verifyingWord
+            verifyingWordOpacity: root.verifyingWordOpacity
         }
     }
 
@@ -691,230 +708,18 @@ Item {
             exclusionMode: ExclusionMode.Ignore
             mask: Region {}
 
-            Item {
-                id: indicator
+            Loader {
+                id: lockIndicatorLoader
                 width: 220
                 height: 250
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: Math.max(36, parent.height * 0.5 - height - 74)
-
-                readonly property bool checking: root.overlayState === "checking"
-                readonly property bool waking: root.overlayState === "waking"
-                readonly property bool sleeping: root.overlayState === "sleeping"
-                readonly property bool unauthorized: root.overlayState === "unauthorized"
-                readonly property bool success: root.overlayState === "success"
-                readonly property color lockedColor: Util.alpha(Color.lock.text, 0.58)
-                readonly property color unlockedColor: Color.lock.borderActive
-                readonly property color checkingColor: Color.lock.borderActive
-                readonly property color waitingColor: Color.accent
-                readonly property color sleepingColor: Util.alpha(Color.lock.text, 0.32)
-                readonly property color activeColor: success ? unlockedColor
-                    : unauthorized ? lockedColor
-                    : sleeping ? sleepingColor
-                    : checking || waking ? checkingColor : waitingColor
-                property int sweepIndex: 0
-                property int glanceIndex: 0
-                property int glanceStep: 0
-                property bool blinking: false
-
-                Repeater {
-                    model: 72
-
-                    delegate: Item {
-                        required property int index
-                        x: 14
-                        y: 4
-                        width: 192
-                        height: 192
-                        rotation: index * 5
-
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            width: 2
-                            height: indicator.success ? 9 : indicator.unauthorized ? 8 : 7
-                            radius: 1
-                            color: indicator.activeColor
-                            opacity: {
-                                if (indicator.success) return 0.8
-                                if (indicator.unauthorized) return 0.72
-                                if (indicator.sleeping) return 0.09
-                                if (!indicator.checking) return 0.2
-                                const distance = (index - indicator.sweepIndex + 72) % 72
-                                return distance < 10 ? 0.92 - distance * 0.075 : 0.13
-                            }
-                            Behavior on color { ColorAnimation { duration: 180 } }
-                            Behavior on opacity { NumberAnimation { duration: 120 } }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    x: 28
-                    y: 18
-                    width: 164
-                    height: 164
-                    radius: 82
-                    color: "transparent"
-                    border.width: 1
-                    border.color: indicator.activeColor
-                    opacity: indicator.success ? 0 : 0.32
-                    Behavior on opacity { NumberAnimation { duration: 180 } }
-                    Behavior on border.color { ColorAnimation { duration: 180 } }
-                }
-
-                Item {
-                    id: faceAvatar
-                    width: 76
-                    height: 76
-                    x: 72 + indicator.glanceIndex * 3
-                    y: 62
-                    opacity: indicator.success ? 0 : indicator.sleeping ? 0.42 : 1
-                    scale: indicator.checking ? 1.05 : 1
-
-                    Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-                    Behavior on opacity { NumberAnimation { duration: 160 } }
-                    Behavior on scale { NumberAnimation { duration: 360; easing.type: Easing.InOutSine } }
-
-                    Shape {
-                        anchors.fill: parent
-                        antialiasing: true
-                        preferredRendererType: Shape.CurveRenderer
-
-                        ShapePath {
-                            fillColor: "transparent"
-                            strokeColor: indicator.activeColor
-                            strokeWidth: 4
-                            capStyle: ShapePath.RoundCap
-                            joinStyle: ShapePath.RoundJoin
-                            PathSvg {
-                                path: "M22 5H14C9 5 5 9 5 14V22 M54 5H62C67 5 71 9 71 14V22 M71 54V62C71 67 67 71 62 71H54 M22 71H14C9 71 5 67 5 62V54"
-                            }
-                        }
-
-                        ShapePath {
-                            fillColor: "transparent"
-                            strokeColor: indicator.activeColor
-                            strokeWidth: 3.5
-                            capStyle: ShapePath.RoundCap
-                            PathSvg {
-                                path: indicator.unauthorized
-                                    ? "M25 55C31 48 45 48 51 55"
-                                    : "M25 48C31 55 45 55 51 48"
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        x: 23 + indicator.glanceIndex * 2
-                        y: 28
-                        width: 5
-                        height: indicator.blinking ? 2 : 7
-                        radius: 3
-                        color: indicator.activeColor
-                        Behavior on x { NumberAnimation { duration: 300 } }
-                    }
-
-                    Rectangle {
-                        x: 48 + indicator.glanceIndex * 2
-                        y: 28
-                        width: 5
-                        height: indicator.blinking ? 2 : 7
-                        radius: 3
-                        color: indicator.activeColor
-                        Behavior on x { NumberAnimation { duration: 300 } }
-                    }
-                }
-
-                Item {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    y: 56
-                    width: 86
-                    height: 86
-                    opacity: indicator.success ? 1 : 0
-                    scale: indicator.success ? 1 : 0.72
-
-                    Behavior on opacity { NumberAnimation { duration: 220 } }
-                    Behavior on scale { NumberAnimation { duration: 420; easing.type: Easing.OutBack } }
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: width / 2
-                        color: Util.alpha(indicator.unlockedColor, 0.12)
-                        border.width: 2
-                        border.color: indicator.unlockedColor
-                    }
-
-                    Shape {
-                        anchors.fill: parent
-                        antialiasing: true
-                        preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            fillColor: "transparent"
-                            strokeColor: indicator.unlockedColor
-                            strokeWidth: 6
-                            capStyle: ShapePath.RoundCap
-                            joinStyle: ShapePath.RoundJoin
-                            PathSvg { path: "M24 44L37 57L64 28" }
-                        }
-                    }
-                }
-
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    y: 212
-                    text: indicator.success ? "UNLOCKED"
-                        : indicator.unauthorized ? "LOCKED"
-                        : indicator.sleeping ? "STANDBY"
-                        : indicator.waking ? "WAKING"
-                        : indicator.checking ? root.verifyingWord : "LOOK AT THE CAMERA"
-                    color: indicator.unauthorized ? indicator.lockedColor
-                        : indicator.success ? indicator.unlockedColor
-                        : indicator.sleeping ? indicator.sleepingColor
-                        : indicator.checking || indicator.waking ? indicator.checkingColor
-                        : Color.lock.text
-                    font.family: Style.font.family
-                    font.pixelSize: Math.max(16, Style.font.caption + 3)
-                    font.bold: true
-                    font.letterSpacing: 1.8
-                    opacity: indicator.checking ? root.verifyingWordOpacity
-                        : indicator.sleeping ? 0.58 : 0.9
-                }
-
-                Timer {
-                    interval: 46
-                    running: indicator.visible && indicator.checking
-                    repeat: true
-                    onTriggered: indicator.sweepIndex = (indicator.sweepIndex + 1) % 72
-                }
-
-                Timer {
-                    interval: 860
-                    running: indicator.visible && !indicator.success && !indicator.sleeping
-                    repeat: true
-                    onTriggered: {
-                        const sequence = [-1, 0, 1, 0]
-                        indicator.glanceIndex = sequence[indicator.glanceStep]
-                        indicator.glanceStep = (indicator.glanceStep + 1) % sequence.length
-                    }
-                }
-
-                Timer {
-                    id: blinkTimer
-                    interval: 2800
-                    running: indicator.visible && !indicator.success && !indicator.sleeping
-                    repeat: true
-                    onTriggered: {
-                        indicator.blinking = true
-                        blinkClose.restart()
-                    }
-                }
-
-                Timer {
-                    id: blinkClose
-                    interval: 120
-                    repeat: false
-                    onTriggered: indicator.blinking = false
+                sourceComponent: faceIdIndicatorComponent
+                Binding {
+                    target: lockIndicatorLoader.item
+                    property: "displayState"
+                    value: root.overlayState
+                    when: lockIndicatorLoader.item !== null
                 }
             }
         }
@@ -951,5 +756,6 @@ Item {
             root.overlayPreviewVisible = false
             return "ok"
         }
+
     }
 }

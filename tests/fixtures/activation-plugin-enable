@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ ${0##*/} == "pkexec" ]]; then
+    plugin_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy/plugins/fitzzz.face-id"
+    trace="${OMARCHY_FACE_ID_CONFIG_ROOT}/authorization-order.log"
+    printf 'authorization-started\n' >> "$trace"
+
+    case ${OMARCHY_FACE_ID_TEST_MODE:-success} in
+        hang)
+            exec sleep 10
+            ;;
+        denied)
+            printf 'authorization-denied\n' >> "$trace"
+            exit 126
+            ;;
+    esac
+
+    if [[ -e $plugin_dir ]]; then
+        case ${OMARCHY_FACE_ID_TEST_MODE:-success} in
+            restart-not-ready|same-version-repair|downgrade-allowed)
+                printf 'existing-plugin-preserved-during-authorization\n' >> "$trace"
+                ;;
+            *)
+                printf 'plugin-present-too-early\n' >> "$trace"
+                exit 86
+                ;;
+        esac
+    fi
+
+    [[ $# -eq 9 ]]
+    [[ $1 == "/usr/bin/install" ]]
+    [[ $2 == "-o" && $3 == "root" ]]
+    [[ $4 == "-g" && $5 == "root" ]]
+    [[ $6 == "-m" && $7 == "0644" ]]
+    "$1" -m "$7" "$8" "$9"
+    printf 'authorization-finished\n' >> "$trace"
+    [[ ${OMARCHY_FACE_ID_TEST_MODE:-success} != nonzero-installed ]]
+else
+    [[ ${1:-} == "fitzzz.face-id" ]]
+    config_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy"
+    mkdir -p "$config_dir"
+    attempt_file="$config_dir/enable-attempts"
+    attempt=0
+    [[ -f $attempt_file ]] && attempt=$(<"$attempt_file")
+    printf '%s\n' "$((attempt + 1))" > "$attempt_file"
+    [[ -f $config_dir/rescan-complete ]] || exit 1
+    printf '%s\n' '{"version":1,"plugins":[{"id":"fitzzz.face-id"}]}' \
+        > "$config_dir/shell.json"
+fi

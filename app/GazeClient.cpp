@@ -5,6 +5,7 @@
 #include "CameraInventory.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
@@ -21,17 +22,24 @@
 #include <QJsonObject>
 #include <QMetaObject>
 #include <QProcess>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QStorageInfo>
 #include <QTemporaryFile>
 #include <QTextStream>
+#include <QUuid>
+#include <QVersionNumber>
 
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
 #include <pwd.h>
 #include <cstdio>
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 namespace {
@@ -40,6 +48,7 @@ constexpr auto objectPath = "/com/gundulabs/Gaze";
 constexpr auto interfaceName = "com.gundulabs.Gaze";
 constexpr auto facePamPath = "/etc/pam.d/omarchy-face-id-lock";
 constexpr auto pluginId = "fitzzz.face-id";
+constexpr auto pluginVersionFile = ".omarchy-face-id-version";
 constexpr auto gazeOwnershipValue = "omarchy-face-id:gaze-aur:gaze-bin\n";
 constexpr auto legacyGazeOwnershipValue = "omarchy-face-id:gaze:0.2.12-1\n";
 
@@ -131,33 +140,81 @@ bool fileContainsGazeAuthRule(const QString &path)
     return false;
 }
 
-bool systemAuthenticationIsScoped()
+QString elevationHelperSourcePath();
+QString consentModuleSourcePath();
+
+bool systemIntegrationIsReady()
 {
     const QString ownershipRoot = qEnvironmentVariable(
         "OMARCHY_FACE_ID_OWNERSHIP_DIR", QStringLiteral("/var/lib/omarchy-face-id"));
     const QString ownershipReceipt = ownershipRoot + QStringLiteral("/gaze-installed");
-    if (!fileMatches(ownershipReceipt, QByteArray(gazeOwnershipValue))
-        && !fileMatches(ownershipReceipt, QByteArray(legacyGazeOwnershipValue)))
-        return true;
+    const bool gazeOwned = fileMatches(ownershipReceipt, QByteArray(gazeOwnershipValue))
+        || fileMatches(ownershipReceipt, QByteArray(legacyGazeOwnershipValue));
 
     const QString sudoPam = qEnvironmentVariable(
         "OMARCHY_FACE_ID_SUDO_PAM_PATH", QStringLiteral("/etc/pam.d/sudo"));
+    const QString faceIdPam = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_SUDO_FACE_PAM_PATH",
+        QStringLiteral("/etc/pam.d/omarchy-face-id"));
     const QString polkitPam = qEnvironmentVariable(
         "OMARCHY_FACE_ID_POLKIT_PAM_PATH", QStringLiteral("/etc/pam.d/polkit-1"));
-    return !fileContainsGazeAuthRule(sudoPam)
-        && !fileContainsGazeAuthRule(polkitPam);
+    const QString elevationTarget = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_ELEVATION_TARGET",
+        QStringLiteral("/usr/libexec/omarchy-face-id-elevation"));
+    const QString consentTarget = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_CONSENT_TARGET",
+        QStringLiteral("/usr/lib/security/pam_omarchy_face_id_consent.so"));
+    const QString verifierPam = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_VERIFY_PAM_PATH",
+        QStringLiteral("/usr/lib/omarchy-face-id/pam.d/sudo"));
+    const QString elevationSource = elevationHelperSourcePath();
+    const QByteArray helperContents = resourceContents(elevationSource);
+    const QByteArray consentContents = resourceContents(consentModuleSourcePath());
+
+    QFile sudoFile(sudoPam);
+    const QByteArray sudoContents = sudoFile.open(QIODevice::ReadOnly)
+        ? sudoFile.readAll() : QByteArray();
+    QFile faceIdFile(faceIdPam);
+    const QByteArray faceIdContents = faceIdFile.open(QIODevice::ReadOnly)
+        ? faceIdFile.readAll() : QByteArray();
+    const QByteArray target = elevationTarget.toUtf8();
+    const QByteArray userReceipt = QByteArrayLiteral(
+        "omarchy-face-id:registered-user:1\n");
+    const QString registration = ownershipRoot + QStringLiteral("/users/")
+        + QString::number(getuid());
+    const QByteArray expectedFaceIdContents = QByteArrayLiteral(
+        "# Omarchy Face ID sudo authentication. Managed by Omarchy Face ID.\n"
+        "auth [success=done auth_err=die default=ignore] "
+        "pam_omarchy_face_id_consent.so helper=")
+        + target
+        + QByteArrayLiteral("\n");
+    const QByteArray expectedVerifierContents = QByteArrayLiteral(
+        "# Omarchy Face ID private face verification. Managed by Omarchy Face ID.\n"
+        "auth [success=done ignore=ignore default=bad] pam_gaze.so\n"
+        "auth required pam_deny.so\n"
+        "account required pam_permit.so\n");
+    const bool sudoReady = !helperContents.isEmpty() && !consentContents.isEmpty()
+        && fileMatches(elevationTarget, helperContents)
+        && fileMatches(consentTarget, consentContents)
+        && fileMatches(verifierPam, expectedVerifierContents)
+        && fileMatches(registration, userReceipt)
+        && sudoContents.contains("# BEGIN Omarchy Face ID sudo\n")
+        && sudoContents.contains(
+            "auth include omarchy-face-id\n")
+        && sudoContents.contains("# END Omarchy Face ID sudo\n")
+        && faceIdContents == expectedFaceIdContents;
+    return sudoReady && (!gazeOwned || !fileContainsGazeAuthRule(polkitPam));
 }
 
-QString presenceHelperSourcePath()
+QString bundledHelperSourcePath(const char *overrideVariable, const QString &fileName)
 {
-    const QString overridePath = qEnvironmentVariable(
-        "OMARCHY_FACE_ID_PRESENCE_HELPER_PATH");
+    const QString overridePath = qEnvironmentVariable(overrideVariable);
     const QString applicationDirectory = QCoreApplication::applicationDirPath();
     const QStringList candidates = overridePath.isEmpty()
         ? QStringList{
-              applicationDirectory + QStringLiteral("/omarchy-face-id-presence"),
+              applicationDirectory + QLatin1Char('/') + fileName,
               QDir::cleanPath(applicationDirectory
-                              + QStringLiteral("/../libexec/omarchy-face-id-presence"))}
+                              + QStringLiteral("/../libexec/") + fileName)}
         : QStringList{overridePath};
 
     for (const QString &candidate : candidates) {
@@ -167,6 +224,81 @@ QString presenceHelperSourcePath()
             return candidate;
     }
     return {};
+}
+
+QString presenceHelperSourcePath()
+{
+    return bundledHelperSourcePath("OMARCHY_FACE_ID_PRESENCE_HELPER_PATH",
+                                   QStringLiteral("omarchy-face-id-presence"));
+}
+
+QString elevationHelperSourcePath()
+{
+    return bundledHelperSourcePath("OMARCHY_FACE_ID_ELEVATION_HELPER_PATH",
+                                   QStringLiteral("omarchy-face-id-elevation"));
+}
+
+QString consentModuleSourcePath()
+{
+    const QString overridePath = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_CONSENT_MODULE_PATH");
+    const QString applicationDirectory = QCoreApplication::applicationDirPath();
+    const QString fileName = QStringLiteral("pam_omarchy_face_id_consent.so");
+    const QStringList candidates = overridePath.isEmpty()
+        ? QStringList{
+              applicationDirectory + QLatin1Char('/') + fileName,
+              QDir::cleanPath(applicationDirectory
+                              + QStringLiteral("/../lib/security/") + fileName)}
+        : QStringList{overridePath};
+
+    for (const QString &candidate : candidates) {
+        const QFileInfo info(candidate);
+        if (info.isFile() && !info.isSymLink())
+            return info.absoluteFilePath();
+    }
+    return {};
+}
+
+QString systemInstallerSourcePath()
+{
+    const QString overridePath = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_SYSTEM_INSTALLER_PATH");
+    const QString applicationDirectory = QCoreApplication::applicationDirPath();
+    const QStringList candidates = overridePath.isEmpty()
+        ? QStringList{QDir::cleanPath(
+              applicationDirectory
+              + QStringLiteral("/../share/omarchy-face-id/install-gaze-arch.sh"))}
+        : QStringList{overridePath};
+    for (const QString &candidate : candidates) {
+        const QFileInfo info(candidate);
+        if (info.isFile() && !info.isSymLink() && info.isExecutable())
+            return info.absoluteFilePath();
+    }
+    return {};
+}
+
+bool trustedSystemPayload(const QString &path)
+{
+    const QFileInfo info(path);
+    if (!info.isFile() || info.isSymLink())
+        return false;
+    const QStorageInfo storage(info.absolutePath());
+    if (storage.isValid() && storage.isReady() && storage.isReadOnly())
+        return true;
+    const auto permissions = info.permissions();
+    return info.ownerId() == 0
+        && !(permissions & (QFileDevice::WriteGroup | QFileDevice::WriteOther));
+}
+
+QByteArray fileSha256(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QCryptographicHash digest(QCryptographicHash::Sha256);
+    if (!digest.addData(&file))
+        return {};
+    return digest.result().toHex();
 }
 
 bool pluginEnabled(const QString &configRoot)
@@ -187,6 +319,38 @@ bool pluginEnabled(const QString &configRoot)
             return true;
     }
     return false;
+}
+
+QString installedPluginVersion(const QString &pluginRoot)
+{
+    QFile receipt(pluginRoot + QLatin1Char('/')
+                  + QString::fromLatin1(pluginVersionFile));
+    if (receipt.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString::fromUtf8(receipt.readAll()).trimmed();
+
+    QFile manifest(pluginRoot + QStringLiteral("/manifest.json"));
+    if (!manifest.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonDocument document = QJsonDocument::fromJson(manifest.readAll());
+    return document.isObject()
+        ? document.object().value(QStringLiteral("version")).toString().trimmed()
+        : QString();
+}
+
+bool isSemanticDowngrade(const QString &installed, const QString &candidate)
+{
+    const QVersionNumber installedVersion = QVersionNumber::fromString(installed);
+    const QVersionNumber candidateVersion = QVersionNumber::fromString(candidate);
+    return !installedVersion.isNull() && !candidateVersion.isNull()
+        && QVersionNumber::compare(candidateVersion, installedVersion) < 0;
+}
+
+bool exchangePaths(const QString &first, const QString &second)
+{
+    const QByteArray firstPath = QFile::encodeName(first);
+    const QByteArray secondPath = QFile::encodeName(second);
+    return ::syscall(SYS_renameat2, AT_FDCWD, firstPath.constData(),
+                     AT_FDCWD, secondPath.constData(), RENAME_EXCHANGE) == 0;
 }
 
 QString installedGazeVersion()
@@ -218,7 +382,7 @@ QDBusInterface gazeInterface()
 }
 
 GazeClient::GazeClient(QObject *parent)
-    : QObject(parent)
+    : QObject(parent), m_theme(this)
 {
     m_diagnostics.record(
         QStringLiteral("app.lifecycle"),
@@ -227,16 +391,7 @@ GazeClient::GazeClient(QObject *parent)
         {{QStringLiteral("app_version"), QStringLiteral(OMARCHY_FACE_ID_VERSION)},
          {QStringLiteral("log_schema_version"), 1}});
     ensureUserConfig();
-    m_themeRoot = qEnvironmentVariable("OMARCHY_FACE_ID_THEME_ROOT",
-                                       QDir::homePath()
-                                           + QStringLiteral("/.local/state/omarchy/current"));
-    m_themeReloadTimer.setSingleShot(true);
-    m_themeReloadTimer.setInterval(40);
-    connect(&m_themeReloadTimer, &QTimer::timeout, this, &GazeClient::reloadTheme);
-    connect(&m_themeWatcher, &QFileSystemWatcher::fileChanged,
-            this, &GazeClient::scheduleThemeReload);
-    connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged,
-            this, &GazeClient::scheduleThemeReload);
+    connect(&m_theme, &OmarchyTheme::changed, this, &GazeClient::themeChanged);
     m_faceSetupPollTimer.setInterval(1000);
     connect(&m_faceSetupPollTimer, &QTimer::timeout, this, [this] {
         ++m_faceSetupPollCount;
@@ -253,7 +408,7 @@ GazeClient::GazeClient(QObject *parent)
             if (result == QStringLiteral("success")) {
                 refresh();
                 if (m_installed && m_serviceAvailable && m_cameraSupportAvailable
-                    && m_systemAuthenticationScoped) {
+                    && m_systemIntegrationReady) {
                     finishFaceSetup(true);
                     return;
                 }
@@ -270,14 +425,15 @@ GazeClient::GazeClient(QObject *parent)
     connect(&m_lockActivationDeadline, &QTimer::timeout, this, [this] {
         if (m_lockActivationPhase == LockActivationPhase::Idle)
             return;
-        refreshLockIntegrationStatus();
+        recordActivationPhase(
+            QStringLiteral("activation_deadline_reached"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("budget_ms"), m_lockActivationDeadline.interval()}});
+        rollbackUserPluginActivation();
         finishLockActivation(
-            m_lockIntegrationInstalled,
-            m_lockIntegrationInstalled
-                ? QString()
-                : QStringLiteral("Face ID setup timed out. Nothing changed; try again."));
+            false,
+            QStringLiteral("Face ID setup timed out. Nothing changed; try again."));
     });
-    reloadTheme();
     refreshLockIntegrationStatus();
 
     auto bus = QDBusConnection::systemBus();
@@ -321,9 +477,18 @@ bool GazeClient::installed() const { return m_installed; }
 bool GazeClient::serviceAvailable() const { return m_serviceAvailable; }
 bool GazeClient::cameraAvailable() const { return m_cameraAvailable; }
 bool GazeClient::cameraSupportAvailable() const { return m_cameraSupportAvailable; }
-bool GazeClient::systemAuthenticationScoped() const
+bool GazeClient::systemIntegrationReady() const
 {
-    return m_systemAuthenticationScoped;
+    return m_systemIntegrationReady;
+}
+bool GazeClient::existingEnrollment() const
+{
+    return QFileInfo::exists(enrollmentReceiptPath());
+}
+bool GazeClient::upgradeAvailable() const
+{
+    return existingEnrollment()
+        && (!m_systemIntegrationReady || !m_lockIntegrationInstalled);
 }
 bool GazeClient::parallelPreviewAvailable() const { return m_parallelPreviewAvailable; }
 bool GazeClient::faceSetupInstalling() const { return m_faceSetupInstalling; }
@@ -337,18 +502,39 @@ QString GazeClient::faceStatus() const { return m_faceStatus; }
 QString GazeClient::previewDataUrl() const { return m_previewDataUrl; }
 QString GazeClient::errorMessage() const { return m_errorMessage; }
 bool GazeClient::lockIntegrationInstalled() const { return m_lockIntegrationInstalled; }
+bool GazeClient::lockIntegrationActive() const { return m_lockIntegrationActive; }
 bool GazeClient::lockIntegrationInstalling() const { return m_lockIntegrationInstalling; }
+QString GazeClient::lockIntegrationStatus() const
+{
+    switch (m_lockActivationPhase) {
+    case LockActivationPhase::Authorizing:
+        return QStringLiteral("Preparing Face ID…");
+    case LockActivationPhase::Rescanning:
+        return QStringLiteral("Registering Face ID…");
+    case LockActivationPhase::Enabling:
+        return QStringLiteral("Enabling Face ID…");
+    case LockActivationPhase::Reloading:
+        return QStringLiteral("Reloading Omarchy Shell…");
+    case LockActivationPhase::Verifying:
+        return m_lockRestartAttempted
+            ? QStringLiteral("Waiting for Omarchy Shell…")
+            : QStringLiteral("Checking Face ID…");
+    case LockActivationPhase::Idle:
+        return QStringLiteral("Preparing update…");
+    }
+    return QStringLiteral("Preparing update…");
+}
 QString GazeClient::lockIntegrationError() const { return m_lockIntegrationError; }
-QColor GazeClient::themeBackground() const { return m_themeBackground; }
-QColor GazeClient::themeDarkBackground() const { return m_themeDarkBackground; }
-QColor GazeClient::themeDarkerBackground() const { return m_themeDarkerBackground; }
-QColor GazeClient::themeLighterBackground() const { return m_themeLighterBackground; }
-QColor GazeClient::themeForeground() const { return m_themeForeground; }
-QColor GazeClient::themeMuted() const { return m_themeMuted; }
-QColor GazeClient::themeAccent() const { return m_themeAccent; }
-QColor GazeClient::themeOrange() const { return m_themeOrange; }
-QColor GazeClient::themeGreen() const { return m_themeGreen; }
-QColor GazeClient::themeRed() const { return m_themeRed; }
+QColor GazeClient::themeBackground() const { return m_theme.background(); }
+QColor GazeClient::themeDarkBackground() const { return m_theme.darkBackground(); }
+QColor GazeClient::themeDarkerBackground() const { return m_theme.darkerBackground(); }
+QColor GazeClient::themeLighterBackground() const { return m_theme.lighterBackground(); }
+QColor GazeClient::themeForeground() const { return m_theme.foreground(); }
+QColor GazeClient::themeMuted() const { return m_theme.muted(); }
+QColor GazeClient::themeAccent() const { return m_theme.accent(); }
+QColor GazeClient::themeOrange() const { return m_theme.orange(); }
+QColor GazeClient::themeGreen() const { return m_theme.green(); }
+QColor GazeClient::themeRed() const { return m_theme.red(); }
 
 void GazeClient::ensureUserConfig()
 {
@@ -419,13 +605,13 @@ void GazeClient::refresh()
     const bool wasAvailable = m_serviceAvailable;
     const bool wasCameraAvailable = m_cameraAvailable;
     const bool wasCameraSupportAvailable = m_cameraSupportAvailable;
-    const bool wasSystemAuthenticationScoped = m_systemAuthenticationScoped;
+    const bool wasSystemIntegrationReady = m_systemIntegrationReady;
     const bool wasParallelPreviewAvailable = m_parallelPreviewAvailable;
 
     m_installed = QFileInfo(qEnvironmentVariable(
         "OMARCHY_FACE_ID_GAZE_PATH", QStringLiteral("/usr/bin/gaze"))).isExecutable();
     m_cameraSupportAvailable = jpegDecoderAvailable();
-    m_systemAuthenticationScoped = systemAuthenticationIsScoped();
+    m_systemIntegrationReady = systemIntegrationIsReady();
     auto *busInterface = QDBusConnection::systemBus().interface();
     const QDBusReply<bool> registered = busInterface
         ? busInterface->isServiceRegistered(QString::fromLatin1(serviceName))
@@ -449,7 +635,7 @@ void GazeClient::refresh()
     if (wasInstalled != m_installed || wasAvailable != m_serviceAvailable
         || wasCameraAvailable != m_cameraAvailable
         || wasCameraSupportAvailable != m_cameraSupportAvailable
-        || wasSystemAuthenticationScoped != m_systemAuthenticationScoped
+        || wasSystemIntegrationReady != m_systemIntegrationReady
         || wasParallelPreviewAvailable != m_parallelPreviewAvailable) {
         m_diagnostics.record(
             QStringLiteral("app.environment"),
@@ -461,15 +647,26 @@ void GazeClient::refresh()
              {QStringLiteral("camera_available"), m_cameraAvailable},
              {QStringLiteral("camera_support_available"),
               m_cameraSupportAvailable},
-             {QStringLiteral("system_authentication_scoped"),
-              m_systemAuthenticationScoped},
+             {QStringLiteral("system_integration_ready"),
+              m_systemIntegrationReady},
              {QStringLiteral("parallel_preview_eligible"),
               m_parallelPreviewAvailable}});
         emit availabilityChanged();
+        emit upgradeChanged();
     }
 }
 
 void GazeClient::installFaceSetup()
+{
+    startFaceSetup(false);
+}
+
+void GazeClient::installFaceSetupQuietly()
+{
+    startFaceSetup(true);
+}
+
+void GazeClient::startFaceSetup(bool quiet)
 {
     if (m_faceSetupInstalling)
         return;
@@ -479,44 +676,52 @@ void GazeClient::installFaceSetup()
 
     refresh();
     if (m_installed && m_serviceAvailable && m_cameraSupportAvailable
-        && m_systemAuthenticationScoped) {
+        && m_systemIntegrationReady) {
         m_faceSetupError.clear();
         emit faceSetupChanged();
         return;
     }
 
-    const QString terminalLauncher = QStandardPaths::findExecutable(
+    const QString terminalLauncher = quiet ? QString() : QStandardPaths::findExecutable(
         QStringLiteral("omarchy-launch-terminal"));
+    const QString installerPath = systemInstallerSourcePath();
+    const QString elevationHelper = elevationHelperSourcePath();
+    const QString consentModule = consentModuleSourcePath();
     const QByteArray installerContents = resourceContents(
         QStringLiteral(":/scripts/install-gaze-arch.sh"));
-    if (terminalLauncher.isEmpty() || installerContents.isEmpty()) {
-        m_faceSetupError = QStringLiteral("The Gaze package installer is unavailable.");
+    if ((!quiet && terminalLauncher.isEmpty()) || installerPath.isEmpty()
+        || elevationHelper.isEmpty() || consentModule.isEmpty()
+        || installerContents.isEmpty()
+        || !fileMatches(installerPath, installerContents)) {
+        m_faceSetupError = QStringLiteral(
+            "The Face ID system installer is unavailable.");
         emit faceSetupChanged();
         return;
     }
 
-    QTemporaryFile installer(
-        QDir::tempPath() + QStringLiteral("/omarchy-face-id-installer.XXXXXX"));
-    installer.setAutoRemove(false);
-    if (!installer.open()
-        || installer.write(installerContents) != installerContents.size()
-        || !installer.flush()) {
-        m_faceSetupError = QStringLiteral("Could not prepare the Gaze package installer.");
+    if (!trustedSystemPayload(installerPath)
+        || !trustedSystemPayload(elevationHelper)
+        || !trustedSystemPayload(consentModule)) {
+        m_faceSetupError = QStringLiteral(
+            "System setup must be run from the original Face ID AppImage.");
         emit faceSetupChanged();
         return;
     }
-    const QString installerPath = installer.fileName();
-    installer.close();
-    QFile::setPermissions(
-        installerPath,
-        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+
+    const QByteArray helperSha256 = fileSha256(elevationHelper);
+    const QByteArray consentSha256 = fileSha256(consentModule);
+    if (helperSha256.isEmpty() || consentSha256.isEmpty()) {
+        m_faceSetupError = QStringLiteral(
+            "Could not verify the Face ID system installer.");
+        emit faceSetupChanged();
+        return;
+    }
 
     QTemporaryFile status(
         QDir::tempPath() + QStringLiteral("/omarchy-face-id-install.XXXXXX"));
     status.setAutoRemove(false);
     if (!status.open()) {
-        QFile::remove(installerPath);
-        m_faceSetupError = QStringLiteral("Could not start Gaze package setup.");
+        m_faceSetupError = QStringLiteral("Could not start Face ID system setup.");
         emit faceSetupChanged();
         return;
     }
@@ -524,20 +729,62 @@ void GazeClient::installFaceSetup()
     status.close();
     QFile::remove(m_faceSetupStatusPath);
 
-    qint64 installerPid = 0;
-    const bool launched = QProcess::startDetached(
-        terminalLauncher,
-        {QStringLiteral("/usr/bin/bash"),
-         installerPath,
-         QStringLiteral("--wizard"),
-         QStringLiteral("--status-file"), m_faceSetupStatusPath,
-         QStringLiteral("--self-delete")},
-        QString(),
-        &installerPid);
+    QStringList installerArguments{
+        installerPath,
+        QStringLiteral("--elevation-helper"), elevationHelper,
+        QStringLiteral("--elevation-sha256"),
+        QString::fromLatin1(helperSha256),
+        QStringLiteral("--consent-module"), consentModule,
+        QStringLiteral("--consent-sha256"),
+        QString::fromLatin1(consentSha256),
+        QStringLiteral("--status-file"), m_faceSetupStatusPath};
+
+    bool launched = false;
+    if (quiet) {
+        auto *process = new QProcess(this);
+        process->setInputChannelMode(QProcess::ForwardedInputChannel);
+        process->setProcessChannelMode(QProcess::ForwardedChannels);
+        m_faceSetupProcess = process;
+        connect(process, &QProcess::errorOccurred, this,
+                [this, process](QProcess::ProcessError) {
+                    if (m_faceSetupProcess != process)
+                        return;
+                    m_faceSetupProcess = nullptr;
+                    process->deleteLater();
+                    finishFaceSetup(
+                        false,
+                        QStringLiteral("Could not run Face ID system setup."));
+                },
+                Qt::SingleShotConnection);
+        connect(process,
+                qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+                this,
+                [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
+                    if (m_faceSetupProcess != process)
+                        return;
+                    m_faceSetupProcess = nullptr;
+                    process->deleteLater();
+                    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                        finishFaceSetup(
+                            false,
+                            QStringLiteral("Face ID system setup did not finish."));
+                    }
+                },
+                Qt::SingleShotConnection);
+        process->start(QStringLiteral("/usr/bin/bash"), installerArguments);
+        launched = true;
+    } else {
+        installerArguments.insert(1, QStringLiteral("--wizard"));
+        installerArguments.prepend(QStringLiteral("/usr/bin/bash"));
+        qint64 installerPid = 0;
+        launched = QProcess::startDetached(terminalLauncher,
+                                           installerArguments,
+                                           QString(), &installerPid);
+    }
     if (!launched) {
-        QFile::remove(installerPath);
         m_faceSetupStatusPath.clear();
-        m_faceSetupError = QStringLiteral("Could not open the Gaze package installer.");
+        m_faceSetupError = QStringLiteral(
+            "Could not open the Face ID system installer.");
         emit faceSetupChanged();
         return;
     }
@@ -738,7 +985,35 @@ void GazeClient::enableLockIntegration()
                          QStringLiteral("start_requested"));
 
     m_lockIntegrationError.clear();
-    m_lockPluginDiscoveryPasses = 0;
+    m_lockIntegrationActive = false;
+    m_lockRestartAttempted = false;
+    m_lockRestartVerificationElapsed.invalidate();
+    m_lockPluginRoot.clear();
+    m_lockPluginBackupRoot.clear();
+    m_lockActivationElapsed.start();
+    m_lockPhaseElapsed.start();
+
+    const QString configRoot = qEnvironmentVariable(
+        "OMARCHY_FACE_ID_CONFIG_ROOT",
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
+    const QString pluginRoot = configRoot
+        + QStringLiteral("/omarchy/plugins/") + QString::fromLatin1(pluginId);
+    const QString installedVersion = installedPluginVersion(pluginRoot);
+    const QString candidateVersion = QStringLiteral(OMARCHY_FACE_ID_VERSION);
+    if (!qEnvironmentVariableIsSet("OMARCHY_FACE_ID_ALLOW_DOWNGRADE")
+        && isSemanticDowngrade(installedVersion, candidateVersion)) {
+        m_lockIntegrationError = QStringLiteral(
+            "A newer Face ID version is already installed. It was left unchanged.");
+        m_diagnostics.record(
+            QStringLiteral("lock.activation"),
+            QStringLiteral("downgrade_blocked"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("installed_version"), installedVersion},
+             {QStringLiteral("candidate_version"), candidateVersion}});
+        emit lockIntegrationChanged();
+        emit lockIntegrationActivationFinished(lockIntegrationStateMatches(), false);
+        return;
+    }
     const QByteArray pamContents = resourceContents(
         QStringLiteral(":/packaging/pam/omarchy-face-id-lock"));
     if (pamContents.isEmpty()) {
@@ -758,7 +1033,7 @@ void GazeClient::enableLockIntegration()
         }
         const int configuredTimeout = qEnvironmentVariableIntValue(
             "OMARCHY_FACE_ID_ACTIVATION_TIMEOUT_MS");
-        m_lockActivationDeadline.start(configuredTimeout > 0 ? configuredTimeout : 90000);
+        m_lockActivationDeadline.start(configuredTimeout > 0 ? configuredTimeout : 15000);
         m_lockIntegrationInstalling = true;
         m_lockActivationPhase = LockActivationPhase::Authorizing;
         emit lockIntegrationChanged();
@@ -788,7 +1063,7 @@ void GazeClient::enableLockIntegration()
 
     const int configuredTimeout = qEnvironmentVariableIntValue(
         "OMARCHY_FACE_ID_ACTIVATION_TIMEOUT_MS");
-    m_lockActivationDeadline.start(configuredTimeout > 0 ? configuredTimeout : 90000);
+    m_lockActivationDeadline.start(configuredTimeout > 0 ? configuredTimeout : 15000);
     m_lockIntegrationInstalling = true;
     m_lockActivationPhase = LockActivationPhase::Authorizing;
     emit lockIntegrationChanged();
@@ -796,10 +1071,13 @@ void GazeClient::enableLockIntegration()
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_lockIntegrationProcess = process;
+    m_lockPhaseElapsed.restart();
+    recordActivationPhase(QStringLiteral("pam_authorization_started"),
+                          DiagnosticLog::Level::Debug);
     connect(process,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this,
-            [this, process](int, QProcess::ExitStatus) {
+            [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
                 if (m_lockIntegrationProcess != process
                     || m_lockActivationPhase != LockActivationPhase::Authorizing)
                     return;
@@ -808,6 +1086,11 @@ void GazeClient::enableLockIntegration()
                     qWarning().noquote() << QString::fromLocal8Bit(diagnostic).trimmed();
                 m_lockIntegrationProcess = nullptr;
                 process->deleteLater();
+                recordActivationPhase(
+                    QStringLiteral("pam_authorization_finished"),
+                    exitStatus == QProcess::NormalExit && exitCode == 0
+                        ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+                    {{QStringLiteral("exit_code"), exitCode}});
                 continueLockIntegrationInstall();
             },
             Qt::SingleShotConnection);
@@ -817,6 +1100,9 @@ void GazeClient::enableLockIntegration()
                     || m_lockActivationPhase != LockActivationPhase::Authorizing)
                     return;
                 abandonProcess(m_lockIntegrationProcess);
+                recordActivationPhase(QStringLiteral("pam_authorization_finished"),
+                                      DiagnosticLog::Level::Error,
+                                      {{QStringLiteral("exit_code"), -1}});
                 continueLockIntegrationInstall();
             },
             Qt::SingleShotConnection);
@@ -827,6 +1113,22 @@ void GazeClient::enableLockIntegration()
          QStringLiteral("-g"), QStringLiteral("root"),
          QStringLiteral("-m"), QStringLiteral("0644"),
          m_lockIntegrationPamFile->fileName(), configuredPamPath});
+    const int authorizationTimeout = qEnvironmentVariableIntValue(
+        "OMARCHY_FACE_ID_AUTH_TIMEOUT_MS");
+    const QPointer<QProcess> guarded(process);
+    QTimer::singleShot(authorizationTimeout > 0 ? authorizationTimeout : 10000,
+                       this, [this, guarded, authorizationTimeout] {
+        if (!guarded || guarded != m_lockIntegrationProcess
+            || guarded->state() == QProcess::NotRunning)
+            return;
+        recordActivationPhase(
+            QStringLiteral("command_deadline_reached"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("command"), QStringLiteral("pam_authorization")},
+             {QStringLiteral("timeout_ms"),
+              authorizationTimeout > 0 ? authorizationTimeout : 10000}});
+        guarded->kill();
+    });
 }
 
 void GazeClient::refreshLockIntegrationStatus()
@@ -836,6 +1138,7 @@ void GazeClient::refreshLockIntegrationStatus()
     if (installed != m_lockIntegrationInstalled) {
         m_lockIntegrationInstalled = installed;
         emit lockIntegrationChanged();
+        emit upgradeChanged();
     }
 
     // Version 0.3.0 predates enrollment receipts and always used "default".
@@ -866,6 +1169,13 @@ bool GazeClient::lockIntegrationStateMatches() const
             pluginRoot + QStringLiteral("/Service.qml"),
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/Service.qml")))
         && fileMatches(
+            pluginRoot + QStringLiteral("/LockState.js"),
+            resourceContents(QStringLiteral(":/integration/omarchy-plugin/LockState.js")))
+        && fileMatches(
+            pluginRoot + QStringLiteral("/FaceIdIndicator.qml"),
+            resourceContents(QStringLiteral(
+                ":/integration/omarchy-plugin/FaceIdIndicator.qml")))
+        && fileMatches(
             pluginRoot + QStringLiteral("/manifest.json"),
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/manifest.json")))
         && fileMatches(
@@ -876,6 +1186,9 @@ bool GazeClient::lockIntegrationStateMatches() const
             resourceContents(QStringLiteral(":/integration/omarchy-plugin/log-event.sh")))
         && fileMatches(installedPresenceHelper, presenceHelperContents)
         && QFileInfo(installedPresenceHelper).isExecutable()
+        && fileMatches(pluginRoot + QLatin1Char('/')
+                           + QString::fromLatin1(pluginVersionFile),
+                       QByteArray(OMARCHY_FACE_ID_VERSION) + '\n')
         && pluginEnabled(configRoot);
 }
 
@@ -893,23 +1206,35 @@ void GazeClient::recordEnrollmentOwnership(const QString &faceName)
         && receipt.commit()) {
         QFile::setPermissions(receiptPath,
                               QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+        emit upgradeChanged();
     }
 }
 
-bool GazeClient::installUserPlugin(QString *error)
+bool GazeClient::stageAndActivateUserPlugin(QString *error)
 {
     const QString configRoot = qEnvironmentVariable(
         "OMARCHY_FACE_ID_CONFIG_ROOT",
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
-    const QString pluginRoot = configRoot
-        + QStringLiteral("/omarchy/plugins/") + QString::fromLatin1(pluginId);
+    const QString pluginsRoot = configRoot + QStringLiteral("/omarchy/plugins");
+    const QString transactionRoot = configRoot
+        + QStringLiteral("/omarchy/.face-id-transactions");
+    const QString pluginRoot = pluginsRoot + QLatin1Char('/')
+        + QString::fromLatin1(pluginId);
 
     if (QFileInfo(pluginRoot).isSymLink()) {
         *error = QStringLiteral("The Face ID plugin folder is a symbolic link. It was left unchanged.");
         return false;
     }
-    if (!QDir().mkpath(pluginRoot)) {
-        *error = QStringLiteral("Could not create the Face ID plugin folder.");
+    if (!QDir().mkpath(pluginsRoot) || !QDir().mkpath(transactionRoot)) {
+        *error = QStringLiteral("Could not create the Omarchy plugin folder.");
+        return false;
+    }
+
+    const QString suffix = QUuid::createUuid().toString(QUuid::Id128);
+    const QString stagedRoot = transactionRoot + QStringLiteral("/stage-")
+        + suffix;
+    if (!QDir().mkpath(stagedRoot)) {
+        *error = QStringLiteral("Could not stage the Omarchy Face ID plugin.");
         return false;
     }
 
@@ -948,22 +1273,106 @@ bool GazeClient::installUserPlugin(QString *error)
     const auto executable = readable | QFileDevice::ExeOwner
         | QFileDevice::ExeGroup | QFileDevice::ExeOther;
     const QByteArray presenceHelper = resourceContents(presenceHelperSourcePath());
+    const QByteArray version = QByteArray(OMARCHY_FACE_ID_VERSION) + '\n';
 
-    return writeResource(
+    const bool staged = writeResource(
                QStringLiteral(":/integration/omarchy-plugin/Service.qml"),
-               pluginRoot + QStringLiteral("/Service.qml"), readable)
+               stagedRoot + QStringLiteral("/Service.qml"), readable)
+        && writeResource(
+            QStringLiteral(":/integration/omarchy-plugin/LockState.js"),
+            stagedRoot + QStringLiteral("/LockState.js"), readable)
+        && writeResource(
+            QStringLiteral(":/integration/omarchy-plugin/FaceIdIndicator.qml"),
+            stagedRoot + QStringLiteral("/FaceIdIndicator.qml"), readable)
         && writeResource(
             QStringLiteral(":/integration/omarchy-plugin/manifest.json"),
-            pluginRoot + QStringLiteral("/manifest.json"), readable)
+            stagedRoot + QStringLiteral("/manifest.json"), readable)
         && writeResource(
             QStringLiteral(":/assets/ding.mp3"),
-            pluginRoot + QStringLiteral("/ding.mp3"), readable)
+            stagedRoot + QStringLiteral("/ding.mp3"), readable)
         && writeResource(
             QStringLiteral(":/integration/omarchy-plugin/log-event.sh"),
-            pluginRoot + QStringLiteral("/log-event.sh"), executable)
+            stagedRoot + QStringLiteral("/log-event.sh"), executable)
         && writeContents(
             presenceHelper,
-            pluginRoot + QStringLiteral("/presence-watcher"), executable);
+            stagedRoot + QStringLiteral("/presence-watcher"), executable)
+        && writeContents(version,
+                         stagedRoot + QLatin1Char('/')
+                             + QString::fromLatin1(pluginVersionFile),
+                         readable);
+    if (!staged) {
+        QDir(stagedRoot).removeRecursively();
+        return false;
+    }
+
+    const bool validated = fileMatches(
+            stagedRoot + QStringLiteral("/Service.qml"),
+            resourceContents(QStringLiteral(":/integration/omarchy-plugin/Service.qml")))
+        && fileMatches(stagedRoot + QStringLiteral("/LockState.js"),
+                       resourceContents(QStringLiteral(":/integration/omarchy-plugin/LockState.js")))
+        && fileMatches(
+            stagedRoot + QStringLiteral("/FaceIdIndicator.qml"),
+            resourceContents(QStringLiteral(
+                ":/integration/omarchy-plugin/FaceIdIndicator.qml")))
+        && fileMatches(stagedRoot + QStringLiteral("/manifest.json"),
+                       resourceContents(QStringLiteral(":/integration/omarchy-plugin/manifest.json")))
+        && fileMatches(stagedRoot + QStringLiteral("/ding.mp3"),
+                       resourceContents(QStringLiteral(":/assets/ding.mp3")))
+        && fileMatches(stagedRoot + QStringLiteral("/log-event.sh"),
+                       resourceContents(QStringLiteral(":/integration/omarchy-plugin/log-event.sh")))
+        && fileMatches(stagedRoot + QStringLiteral("/presence-watcher"), presenceHelper)
+        && fileMatches(stagedRoot + QLatin1Char('/')
+                           + QString::fromLatin1(pluginVersionFile), version);
+    if (!validated) {
+        QDir(stagedRoot).removeRecursively();
+        *error = QStringLiteral("The staged Face ID plugin did not validate.");
+        return false;
+    }
+
+    const bool replacingExisting = QFileInfo::exists(pluginRoot);
+    const bool activated = replacingExisting
+        ? exchangePaths(stagedRoot, pluginRoot)
+        : QDir().rename(stagedRoot, pluginRoot);
+    if (!activated) {
+        QDir(stagedRoot).removeRecursively();
+        *error = QStringLiteral("Could not activate the staged Face ID plugin.");
+        return false;
+    }
+
+    m_lockPluginRoot = pluginRoot;
+    // RENAME_EXCHANGE leaves the complete prior plugin at the staging path.
+    m_lockPluginBackupRoot = replacingExisting ? stagedRoot : QString();
+    recordActivationPhase(
+        QStringLiteral("plugin_files_activated"), DiagnosticLog::Level::Info,
+        {{QStringLiteral("backup_present"), !m_lockPluginBackupRoot.isEmpty()},
+         {QStringLiteral("version"), QStringLiteral(OMARCHY_FACE_ID_VERSION)}});
+    return true;
+}
+
+void GazeClient::commitUserPluginActivation()
+{
+    if (!m_lockPluginBackupRoot.isEmpty())
+        QDir(m_lockPluginBackupRoot).removeRecursively();
+    m_lockPluginBackupRoot.clear();
+    m_lockPluginRoot.clear();
+}
+
+void GazeClient::rollbackUserPluginActivation()
+{
+    if (m_lockPluginRoot.isEmpty())
+        return;
+    const bool hadPrevious = !m_lockPluginBackupRoot.isEmpty();
+    const bool restored = hadPrevious
+        ? exchangePaths(m_lockPluginBackupRoot, m_lockPluginRoot)
+        : QDir(m_lockPluginRoot).removeRecursively();
+    if (restored && hadPrevious)
+        QDir(m_lockPluginBackupRoot).removeRecursively();
+    recordActivationPhase(
+        QStringLiteral("plugin_files_rolled_back"),
+        restored ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+        {{QStringLiteral("restored_previous"), restored && hadPrevious}});
+    m_lockPluginBackupRoot.clear();
+    m_lockPluginRoot.clear();
 }
 
 void GazeClient::continueLockIntegrationInstall()
@@ -997,11 +1406,10 @@ void GazeClient::continueLockIntegrationInstall()
         DiagnosticLog::Level::Info,
         {{QStringLiteral("success"), true}});
 
-    // Installing into the watched Omarchy plugin directory reloads every
-    // shell service, including the polkit agent. Do it only after pkexec has
-    // finished so the password conversation cannot be destroyed mid-flight.
+    // Build and validate a complete sibling directory, then cross the watched
+    // activation boundary with one rename after authorization has finished.
     QString pluginError;
-    if (!installUserPlugin(&pluginError)) {
+    if (!stageAndActivateUserPlugin(&pluginError)) {
         finishLockActivation(false, pluginError);
         return;
     }
@@ -1010,7 +1418,10 @@ void GazeClient::continueLockIntegrationInstall()
         QStringLiteral("omarchy-shell"));
     m_lockPluginEnableCommand = QStandardPaths::findExecutable(
         QStringLiteral("omarchy-plugin-enable"));
+    m_lockShellRestartCommand = QStandardPaths::findExecutable(
+        QStringLiteral("omarchy-restart-shell"));
     if (m_lockPluginRescanCommand.isEmpty() || m_lockPluginEnableCommand.isEmpty()) {
+        rollbackUserPluginActivation();
         finishLockActivation(
             false,
             QStringLiteral("Face ID couldn’t be added to the lock screen. Try again."));
@@ -1027,23 +1438,27 @@ void GazeClient::startLockPluginRescan()
         return;
 
     m_lockActivationPhase = LockActivationPhase::Rescanning;
-    ++m_lockPluginDiscoveryPasses;
-    m_diagnostics.record(
-        QStringLiteral("lock.activation"),
-        QStringLiteral("plugin_rescan_started"),
-        DiagnosticLog::Level::Debug,
-        {{QStringLiteral("pass"), m_lockPluginDiscoveryPasses}});
+    m_lockPhaseElapsed.restart();
+    emit lockIntegrationChanged();
+    recordActivationPhase(QStringLiteral("plugin_rescan_started"),
+                          DiagnosticLog::Level::Debug);
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_lockPluginEnableProcess = process;
     connect(process,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this,
-            [this, process](int, QProcess::ExitStatus) {
+            [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
                 if (m_lockPluginEnableProcess != process
                     || m_lockActivationPhase != LockActivationPhase::Rescanning)
                     return;
-                abandonProcess(m_lockPluginEnableProcess);
+                m_lockPluginEnableProcess = nullptr;
+                process->deleteLater();
+                recordActivationPhase(
+                    QStringLiteral("plugin_rescan_finished"),
+                    exitStatus == QProcess::NormalExit && exitCode == 0
+                        ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+                    {{QStringLiteral("exit_code"), exitCode}});
                 startLockPluginEnable();
             },
             Qt::SingleShotConnection);
@@ -1052,8 +1467,10 @@ void GazeClient::startLockPluginRescan()
                 if (m_lockPluginEnableProcess != process
                     || m_lockActivationPhase != LockActivationPhase::Rescanning)
                     return;
-                m_lockPluginEnableProcess = nullptr;
-                process->deleteLater();
+                abandonProcess(m_lockPluginEnableProcess);
+                recordActivationPhase(QStringLiteral("plugin_rescan_finished"),
+                                      DiagnosticLog::Level::Error,
+                                      {{QStringLiteral("exit_code"), -1}});
                 startLockPluginEnable();
             },
             Qt::SingleShotConnection);
@@ -1068,42 +1485,171 @@ void GazeClient::startLockPluginEnable()
         return;
 
     m_lockActivationPhase = LockActivationPhase::Enabling;
-    m_diagnostics.record(
-        QStringLiteral("lock.activation"),
-        QStringLiteral("plugin_enable_started"),
-        DiagnosticLog::Level::Debug,
-        {{QStringLiteral("pass"), m_lockPluginDiscoveryPasses}});
+    m_lockPhaseElapsed.restart();
+    emit lockIntegrationChanged();
+    recordActivationPhase(QStringLiteral("plugin_enable_started"),
+                          DiagnosticLog::Level::Debug);
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_lockPluginEnableProcess = process;
-    const auto complete = [this, process] {
+    const auto complete = [this, process](int exitCode,
+                                          QProcess::ExitStatus exitStatus) {
         if (m_lockPluginEnableProcess != process
             || m_lockActivationPhase != LockActivationPhase::Enabling)
             return;
         const QByteArray diagnostic = process->readAll();
         if (!diagnostic.isEmpty())
             qWarning().noquote() << QString::fromLocal8Bit(diagnostic).trimmed();
-        abandonProcess(m_lockPluginEnableProcess);
-        refreshLockIntegrationStatus();
-        if (m_lockIntegrationInstalled) {
+        m_lockPluginEnableProcess = nullptr;
+        process->deleteLater();
+        recordActivationPhase(
+            QStringLiteral("plugin_enable_finished"),
+            exitStatus == QProcess::NormalExit && exitCode == 0
+                ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+            {{QStringLiteral("exit_code"), exitCode}});
+        startLockShellVerification();
+    };
+    connect(process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this,
+            complete,
+            Qt::SingleShotConnection);
+    connect(process, &QProcess::errorOccurred, this,
+            [complete](QProcess::ProcessError) {
+                complete(-1, QProcess::CrashExit);
+            },
+            Qt::SingleShotConnection);
+    process->start(m_lockPluginEnableCommand, {QString::fromLatin1(pluginId)});
+    armProcessDeadline(
+        process, QStringLiteral("plugin_enable"),
+        qEnvironmentVariableIntValue("OMARCHY_FACE_ID_COMMAND_TIMEOUT_MS") > 0
+            ? qEnvironmentVariableIntValue("OMARCHY_FACE_ID_COMMAND_TIMEOUT_MS")
+            : 1500);
+}
+
+void GazeClient::startLockShellRestart()
+{
+    if (!m_lockIntegrationInstalling || m_lockRestartAttempted
+        || m_lockShellRestartCommand.isEmpty() || m_lockPluginEnableProcess)
+        return;
+
+    m_lockRestartAttempted = true;
+    m_lockActivationPhase = LockActivationPhase::Reloading;
+    m_lockPhaseElapsed.restart();
+    m_lockRestartVerificationElapsed.start();
+    emit lockIntegrationChanged();
+    // A shell restart owns the desktop bar, workspace controls, notifications,
+    // and lock screen. Once dispatched it must outlive this updater and must
+    // never be killed by an application deadline.
+    m_lockActivationDeadline.stop();
+    recordActivationPhase(QStringLiteral("shell_restart_started"),
+                          DiagnosticLog::Level::Debug);
+
+    const bool dispatched = QProcess::startDetached(m_lockShellRestartCommand);
+    recordActivationPhase(
+        QStringLiteral("shell_restart_dispatched"),
+        dispatched ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+        {{QStringLiteral("success"), dispatched}});
+    if (!dispatched) {
+        rollbackUserPluginActivation();
+        finishLockActivation(
+            false, QStringLiteral("Omarchy couldn’t restart. Nothing changed."));
+        return;
+    }
+
+    QTimer::singleShot(200, this, [this] {
+        if (m_lockIntegrationInstalling
+            && m_lockActivationPhase == LockActivationPhase::Reloading)
+            startLockShellVerification();
+    });
+}
+
+void GazeClient::startLockShellVerification()
+{
+    if (!m_lockIntegrationInstalling || m_lockPluginRescanCommand.isEmpty()
+        || m_lockPluginEnableProcess)
+        return;
+
+    m_lockActivationPhase = LockActivationPhase::Verifying;
+    m_lockPhaseElapsed.restart();
+    emit lockIntegrationChanged();
+    recordActivationPhase(
+        QStringLiteral("shell_verification_started"),
+        DiagnosticLog::Level::Debug,
+        {{QStringLiteral("after_restart"), m_lockRestartAttempted}});
+
+    auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    m_lockPluginEnableProcess = process;
+    const auto complete = [this, process](int exitCode,
+                                          QProcess::ExitStatus exitStatus) {
+        if (m_lockPluginEnableProcess != process
+            || m_lockActivationPhase != LockActivationPhase::Verifying)
+            return;
+        const QJsonDocument response = QJsonDocument::fromJson(process->readAll());
+        const QJsonObject status = response.object();
+        const bool ready = exitStatus == QProcess::NormalExit
+            && exitCode == 0 && response.isObject()
+            && status.value(QStringLiteral("compatible")).toBool()
+            && status.value(QStringLiteral("pamConfigured")).toBool();
+        m_lockPluginEnableProcess = nullptr;
+        process->deleteLater();
+        recordActivationPhase(
+            QStringLiteral("shell_verification_finished"),
+            ready ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
+            {{QStringLiteral("success"), ready},
+             {QStringLiteral("exit_code"), exitCode},
+             {QStringLiteral("after_restart"), m_lockRestartAttempted}});
+        if (ready) {
+            m_lockIntegrationActive = true;
+            commitUserPluginActivation();
             finishLockActivation(true);
-        } else if (m_lockPluginDiscoveryPasses < 3) {
-            QTimer::singleShot(900, this, &GazeClient::startLockPluginRescan);
-        } else {
+        } else if (!m_lockRestartAttempted
+                   && !m_lockShellRestartCommand.isEmpty()) {
+            startLockShellRestart();
+        } else if (m_lockRestartVerificationElapsed.isValid()) {
+            const int configured = qEnvironmentVariableIntValue(
+                "OMARCHY_FACE_ID_FALLBACK_VERIFY_TIMEOUT_MS");
+            const int readinessBudget = configured > 0 ? configured : 30000;
+            if (m_lockRestartVerificationElapsed.elapsed() < readinessBudget) {
+                QTimer::singleShot(200, this, [this] {
+                    if (m_lockIntegrationInstalling
+                        && m_lockActivationPhase
+                            == LockActivationPhase::Verifying
+                        && !m_lockPluginEnableProcess)
+                        startLockShellVerification();
+                });
+                return;
+            }
+            rollbackUserPluginActivation();
             finishLockActivation(
                 false,
-                QStringLiteral("Face ID couldn’t be added to the lock screen. Try again."));
+                QStringLiteral("Update couldn’t finish. Omarchy is still running."));
+        } else {
+            rollbackUserPluginActivation();
+            finishLockActivation(
+                false,
+                QStringLiteral("Update couldn’t finish. Try again."));
         }
     };
     connect(process,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this,
-            [complete](int, QProcess::ExitStatus) { complete(); },
+            complete,
             Qt::SingleShotConnection);
     connect(process, &QProcess::errorOccurred, this,
-            [complete](QProcess::ProcessError) { complete(); },
+            [complete](QProcess::ProcessError) {
+                complete(-1, QProcess::CrashExit);
+            },
             Qt::SingleShotConnection);
-    process->start(m_lockPluginEnableCommand, {QString::fromLatin1(pluginId)});
+    process->start(m_lockPluginRescanCommand,
+                   {QStringLiteral("face-id"), QStringLiteral("status")});
+    const int configured = qEnvironmentVariableIntValue(
+        m_lockRestartAttempted ? "OMARCHY_FACE_ID_FALLBACK_VERIFY_TIMEOUT_MS"
+                               : "OMARCHY_FACE_ID_VERIFY_TIMEOUT_MS");
+    armProcessDeadline(process, QStringLiteral("shell_verification"),
+                       configured > 0 ? configured
+                                      : (m_lockRestartAttempted ? 4000 : 1800));
 }
 
 void GazeClient::abandonProcess(QProcess *&process)
@@ -1125,12 +1671,46 @@ void GazeClient::abandonProcess(QProcess *&process)
     orphan->kill();
 }
 
+void GazeClient::armProcessDeadline(QProcess *process,
+                                    const QString &command,
+                                    int timeoutMs)
+{
+    const QPointer<QProcess> guarded(process);
+    QTimer::singleShot(timeoutMs, this, [this, guarded, command, timeoutMs] {
+        if (!guarded || guarded != m_lockPluginEnableProcess
+            || guarded->state() == QProcess::NotRunning)
+            return;
+        recordActivationPhase(
+            QStringLiteral("command_deadline_reached"),
+            DiagnosticLog::Level::Error,
+            {{QStringLiteral("command"), command},
+             {QStringLiteral("timeout_ms"), timeoutMs}});
+        guarded->kill();
+    });
+}
+
+void GazeClient::recordActivationPhase(const QString &event,
+                                       DiagnosticLog::Level level,
+                                       const QJsonObject &fields)
+{
+    QJsonObject timedFields = fields;
+    timedFields.insert(QStringLiteral("elapsed_ms"),
+                       m_lockActivationElapsed.isValid()
+                           ? m_lockActivationElapsed.elapsed() : 0);
+    timedFields.insert(QStringLiteral("phase_ms"),
+                       m_lockPhaseElapsed.isValid()
+                           ? m_lockPhaseElapsed.elapsed() : 0);
+    m_diagnostics.record(QStringLiteral("lock.activation"), event, level,
+                         timedFields);
+}
+
 void GazeClient::finishLockActivation(bool success, const QString &error)
 {
     if (m_lockActivationPhase == LockActivationPhase::Idle)
         return;
 
     m_lockActivationDeadline.stop();
+    m_lockRestartVerificationElapsed.invalidate();
     abandonProcess(m_lockIntegrationProcess);
     abandonProcess(m_lockPluginEnableProcess);
     if (m_lockIntegrationPamFile) {
@@ -1139,20 +1719,26 @@ void GazeClient::finishLockActivation(bool success, const QString &error)
     }
     m_lockPluginEnableCommand.clear();
     m_lockPluginRescanCommand.clear();
-    m_lockPluginDiscoveryPasses = 0;
+    m_lockShellRestartCommand.clear();
+    if (!success)
+        rollbackUserPluginActivation();
     m_lockActivationPhase = LockActivationPhase::Idle;
     m_lockIntegrationInstalling = false;
     refreshLockIntegrationStatus();
-    m_lockIntegrationError = success && m_lockIntegrationInstalled
+    const bool activated = success && m_lockIntegrationInstalled
+        && m_lockIntegrationActive;
+    m_lockIntegrationError = activated
         ? QString() : error;
-    m_diagnostics.record(
-        QStringLiteral("lock.activation"),
+    recordActivationPhase(
         QStringLiteral("finished"),
-        success && m_lockIntegrationInstalled
+        activated
             ? DiagnosticLog::Level::Info : DiagnosticLog::Level::Error,
-        {{QStringLiteral("success"), success && m_lockIntegrationInstalled},
-         {QStringLiteral("installed"), m_lockIntegrationInstalled}});
+        {{QStringLiteral("success"), activated},
+         {QStringLiteral("files_installed"), m_lockIntegrationInstalled},
+         {QStringLiteral("live_active"), m_lockIntegrationActive},
+         {QStringLiteral("used_restart_fallback"), m_lockRestartAttempted}});
     emit lockIntegrationChanged();
+    emit lockIntegrationActivationFinished(m_lockIntegrationInstalled, activated);
 }
 
 void GazeClient::onEnrollStatus(const QString &,
@@ -1407,74 +1993,4 @@ void GazeClient::setError(const QString &message)
         return;
     m_errorMessage = message;
     emit errorChanged();
-}
-
-void GazeClient::scheduleThemeReload()
-{
-    m_themeReloadTimer.start();
-}
-
-void GazeClient::reloadTheme()
-{
-    const QString themeDirectory = m_themeRoot + QStringLiteral("/theme");
-    const QString colorsPath = themeDirectory + QStringLiteral("/colors.toml");
-    const QString themeNamePath = m_themeRoot + QStringLiteral("/theme.name");
-
-    QFile colorsFile(colorsPath);
-    if (!colorsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        scheduleThemeReload();
-        return;
-    }
-
-    const QString contents = QTextStream(&colorsFile).readAll();
-    const QRegularExpression entry(
-        QStringLiteral("(?m)^\\s*([A-Za-z0-9_-]+)\\s*=\\s*[\\\"']?(#[0-9A-Fa-f]{6,8})"));
-    QHash<QString, QColor> colors;
-    auto matchIterator = entry.globalMatch(contents);
-    while (matchIterator.hasNext()) {
-        const auto match = matchIterator.next();
-        const QColor color(match.captured(2));
-        if (color.isValid())
-            colors.insert(match.captured(1), color);
-    }
-
-    bool changed = false;
-    const auto apply = [&colors, &changed](const QString &key, QColor &target) {
-        const auto candidate = colors.constFind(key);
-        if (candidate != colors.cend() && candidate.value() != target) {
-            target = candidate.value();
-            changed = true;
-        }
-    };
-    apply(QStringLiteral("background"), m_themeBackground);
-    apply(QStringLiteral("dark_background"), m_themeDarkBackground);
-    apply(QStringLiteral("darker_background"), m_themeDarkerBackground);
-    apply(QStringLiteral("lighter_background"), m_themeLighterBackground);
-    apply(QStringLiteral("foreground"), m_themeForeground);
-    apply(QStringLiteral("muted"), m_themeMuted);
-    apply(QStringLiteral("accent"), m_themeAccent);
-    apply(QStringLiteral("orange"), m_themeOrange);
-    apply(QStringLiteral("green"), m_themeGreen);
-    apply(QStringLiteral("red"), m_themeRed);
-
-    const auto watchedFiles = m_themeWatcher.files();
-    if (!watchedFiles.isEmpty())
-        m_themeWatcher.removePaths(watchedFiles);
-    const auto watchedDirectories = m_themeWatcher.directories();
-    if (!watchedDirectories.isEmpty())
-        m_themeWatcher.removePaths(watchedDirectories);
-    for (const auto &path : {m_themeRoot, themeDirectory}) {
-        if (QFileInfo(path).isDir())
-            m_themeWatcher.addPath(path);
-    }
-    for (const auto &path : {colorsPath, themeNamePath}) {
-        if (QFileInfo(path).isFile())
-            m_themeWatcher.addPath(path);
-    }
-
-    std::fprintf(stderr, "Omarchy theme loaded: %s\n",
-                 m_themeAccent.name().toUtf8().constData());
-    std::fflush(stderr);
-    if (changed)
-        emit themeChanged();
 }

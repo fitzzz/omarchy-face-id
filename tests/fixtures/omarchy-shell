@@ -2,18 +2,79 @@
 
 set -euo pipefail
 
+config_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy"
+mode=${OMARCHY_FACE_ID_TEST_MODE:-success}
+mkdir -p "$config_dir"
+
+increment() {
+    local counter=$1
+    local value=0
+    [[ -f $counter ]] && value=$(<"$counter")
+    printf '%s\n' "$((value + 1))" > "$counter"
+}
+
+if [[ ${0##*/} == "omarchy-restart-shell" ]]; then
+    increment "$config_dir/restart-attempts"
+    : > "$config_dir/core-shell-ready"
+    case $mode in
+        restart-not-ready)
+            exit 1
+            ;;
+        restart-nonzero-ready)
+            [[ -f $config_dir/shell.json ]] || exit 1
+            : > "$config_dir/face-id-handler-ready"
+            exit 1
+            ;;
+        restart-slow-ready)
+            [[ -f $config_dir/shell.json ]] || exit 1
+            sleep 0.6
+            : > "$config_dir/face-id-handler-ready"
+            : > "$config_dir/restart-finished"
+            exit 0
+            ;;
+        fallback-delayed-ready)
+            [[ -f $config_dir/shell.json ]] || exit 1
+            exit 0
+            ;;
+        *)
+            [[ -f $config_dir/shell.json ]] || exit 1
+            : > "$config_dir/face-id-handler-ready"
+            exit 0
+            ;;
+    esac
+fi
+
+if [[ ${1:-} == "face-id" && ${2:-} == "status" ]]; then
+    increment "$config_dir/verification-attempts"
+    case $mode in
+        verification-hang)
+            exec sleep 10
+            ;;
+        fallback-delayed-ready)
+            if [[ -f $config_dir/core-shell-ready \
+                && ! -f $config_dir/face-id-handler-ready ]]; then
+                sleep 0.15
+                : > "$config_dir/face-id-handler-ready"
+            fi
+            ;;
+    esac
+    [[ -f $config_dir/face-id-handler-ready ]] || exit 1
+    printf '%s\n' '{"compatible":true,"pamConfigured":true}'
+    exit 0
+fi
+
 [[ ${1:-} == "shell" ]]
 [[ ${2:-} == "rescanPlugins" ]]
+increment "$config_dir/rescan-attempts"
 
-config_dir="${OMARCHY_FACE_ID_CONFIG_ROOT:?}/omarchy"
-mkdir -p "$config_dir"
-count_file="$config_dir/rescan-attempts"
-count=0
-[[ -f $count_file ]] && count=$(<"$count_file")
-count=$((count + 1))
-printf '%s\n' "$count" > "$count_file"
-
-if [[ ${OMARCHY_FACE_ID_TEST_MODE:-success} != never-discover \
-    && ( ${OMARCHY_FACE_ID_TEST_MODE:-success} != delayed-discovery || $count -ge 2 ) ]]; then
-    : > "$config_dir/rescan-complete"
+if [[ $mode == rescan-slow-ready ]]; then
+    sleep 0.25
 fi
+
+: > "$config_dir/rescan-complete"
+: > "$config_dir/core-shell-ready"
+case $mode in
+    success|nonzero-installed|downgrade-allowed|same-version-repair|rescan-slow-ready)
+        : > "$config_dir/face-id-handler-ready"
+        ;;
+esac

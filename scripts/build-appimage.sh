@@ -41,8 +41,8 @@ cmake --fresh -S "$project_dir" -B "$build_dir" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DBUILD_TESTING=ON
-cmake --build "$build_dir" --parallel
-ctest --test-dir "$build_dir" --output-on-failure
+cmake --build "$build_dir" --parallel 4
+ctest --test-dir "$build_dir" -j2 --output-on-failure
 
 rm -rf -- "$app_dir"
 DESTDIR="$app_dir" cmake --install "$build_dir"
@@ -72,6 +72,8 @@ output="$output_dir/Omarchy_Face_ID-${release_version}-x86_64.AppImage"
 legacy_output="$output_dir/Omarchy_Face_ID-x86_64.AppImage"
 rm -f -- "$legacy_output"
 rm -f -- "$output"
-env VERSION="$release_version" "$appimagetool" "$app_dir" "$output"
+env VERSION="$release_version" "$appimagetool" \
+    --mksquashfs-opt=-processors --mksquashfs-opt=4 \
+    "$app_dir" "$output"
 
 echo "AppImage $release_version written to $output"
