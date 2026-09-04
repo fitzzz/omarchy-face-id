@@ -11,4 +11,7 @@ Omarchy Face ID is a distributable AppImage for real Omarchy users across many m
 - Treat clean Omarchy installations and different RGB, MJPEG, grayscale, and infrared camera configurations as supported product environments.
 - Keep password authentication available through every failure. Camera, Gaze, plugin, and theme failures must remain soft failures that cannot lock a user out.
 - Keep diagnostics privacy-safe and hardware-useful. Never log images, face templates, account names, device serial numbers, or raw biometric data.
+- Build plugin visuals from Omarchy's active semantic theme roles and shared `qs.Ui` components. Build out-of-process visuals from the same semantic theme roles with self-contained Qt components. Do not hard-code status colors, backgrounds, borders, typography, hover states, or pointer behavior.
 - Every hardware or installation fix requires a regression test and a newly versioned AppImage before it is sent to another tester.
+- Treat builds as test candidates until the user has installed, tested, and explicitly approved them. Do not create or push a Git tag, publish a GitHub release, or call a candidate a release before that approval.
+- After a newly versioned test candidate passes its required tests, install it on the maintainer's current machine with `--upgrade-quietly` unless the user says to stop. Check that the Omarchy session is unlocked before any shell reload.

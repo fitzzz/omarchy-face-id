@@ -59,8 +59,11 @@ Current top-level components are:
 - `enrollment.workflow`, `enrollment.gaze_dbus`, `enrollment.camera`, and `enrollment.preview`
 - `lock.activation`
 - `lock.authentication` for installed lock-screen attempts
+- `elevation.authentication` for sudo consent decisions and Face ID attempts
 - `camera.inventory` for sanitized setup and lock-time camera snapshots
 
 New events extend the narrowest existing component. Add a new top-level component only for a distinct subsystem. Event names describe completed facts such as `claim_finished`, not UI wording.
+
+The sudo overlay records privacy-safe state changes such as `consent_prompt_opened`, `consent_approved`, `consent_declined`, `consent_cancelled`, `face_verification_started`, `face_verification_succeeded`, and `face_verification_unavailable`. Root-side gate and PAM result categories go to the system journal without account names, terminal paths, commands, or biometric data.
 
 Camera inventory records logical camera count, USB vendor/product IDs when available, transport class, setup-time capture-format capabilities, Gaze selection mode, and whether an explicit Gaze selection could be matched to an observed camera slot. Lock attempts refresh the count, transport, vendor/product IDs, and selection mapping. The log never stores model names, serial numbers, PipeWire node names, sysfs locations, or `/dev/video*` paths. When Gaze uses `primary`, the daemon chooses the device; diagnostics record that selection honestly as daemon-managed rather than guessing which camera was used.
