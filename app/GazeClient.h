@@ -3,9 +3,10 @@
 #pragma once
 
 #include "DiagnosticLog.h"
+#include "OmarchyTheme.h"
 
 #include <QColor>
-#include <QFileSystemWatcher>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 
@@ -22,7 +23,9 @@ class GazeClient final : public QObject
     Q_PROPERTY(bool serviceAvailable READ serviceAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool cameraAvailable READ cameraAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool cameraSupportAvailable READ cameraSupportAvailable NOTIFY availabilityChanged)
-    Q_PROPERTY(bool systemAuthenticationScoped READ systemAuthenticationScoped NOTIFY availabilityChanged)
+    Q_PROPERTY(bool systemIntegrationReady READ systemIntegrationReady NOTIFY availabilityChanged)
+    Q_PROPERTY(bool existingEnrollment READ existingEnrollment NOTIFY upgradeChanged)
+    Q_PROPERTY(bool upgradeAvailable READ upgradeAvailable NOTIFY upgradeChanged)
     Q_PROPERTY(bool parallelPreviewAvailable READ parallelPreviewAvailable NOTIFY availabilityChanged)
     Q_PROPERTY(bool faceSetupInstalling READ faceSetupInstalling NOTIFY faceSetupChanged)
     Q_PROPERTY(QString faceSetupError READ faceSetupError NOTIFY faceSetupChanged)
@@ -35,7 +38,9 @@ class GazeClient final : public QObject
     Q_PROPERTY(QString previewDataUrl READ previewDataUrl NOTIFY previewChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorChanged)
     Q_PROPERTY(bool lockIntegrationInstalled READ lockIntegrationInstalled NOTIFY lockIntegrationChanged)
+    Q_PROPERTY(bool lockIntegrationActive READ lockIntegrationActive NOTIFY lockIntegrationChanged)
     Q_PROPERTY(bool lockIntegrationInstalling READ lockIntegrationInstalling NOTIFY lockIntegrationChanged)
+    Q_PROPERTY(QString lockIntegrationStatus READ lockIntegrationStatus NOTIFY lockIntegrationChanged)
     Q_PROPERTY(QString lockIntegrationError READ lockIntegrationError NOTIFY lockIntegrationChanged)
     Q_PROPERTY(QColor themeBackground READ themeBackground NOTIFY themeChanged)
     Q_PROPERTY(QColor themeDarkBackground READ themeDarkBackground NOTIFY themeChanged)
@@ -56,7 +61,9 @@ public:
     bool serviceAvailable() const;
     bool cameraAvailable() const;
     bool cameraSupportAvailable() const;
-    bool systemAuthenticationScoped() const;
+    bool systemIntegrationReady() const;
+    bool existingEnrollment() const;
+    bool upgradeAvailable() const;
     bool parallelPreviewAvailable() const;
     bool faceSetupInstalling() const;
     QString faceSetupError() const;
@@ -69,7 +76,9 @@ public:
     QString previewDataUrl() const;
     QString errorMessage() const;
     bool lockIntegrationInstalled() const;
+    bool lockIntegrationActive() const;
     bool lockIntegrationInstalling() const;
+    QString lockIntegrationStatus() const;
     QString lockIntegrationError() const;
     QColor themeBackground() const;
     QColor themeDarkBackground() const;
@@ -84,18 +93,21 @@ public:
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void installFaceSetup();
+    Q_INVOKABLE void installFaceSetupQuietly();
     Q_INVOKABLE void beginEnrollment(const QString &faceName);
     Q_INVOKABLE void cancelEnrollment();
     Q_INVOKABLE void enableLockIntegration();
 
 signals:
     void availabilityChanged();
+    void upgradeChanged();
     void faceSetupChanged();
     void enrollingChanged();
     void enrollmentChanged();
     void previewChanged();
     void errorChanged();
     void lockIntegrationChanged();
+    void lockIntegrationActivationFinished(bool filesInstalled, bool liveActive);
     void themeChanged();
 
 private slots:
@@ -114,22 +126,31 @@ private:
         Authorizing,
         Rescanning,
         Enabling,
+        Reloading,
+        Verifying,
     };
 
     void releaseClaim();
     void setError(const QString &message);
-    void scheduleThemeReload();
-    void reloadTheme();
+    void startFaceSetup(bool quiet);
     void ensureUserConfig();
     void refreshLockIntegrationStatus();
     bool lockIntegrationStateMatches() const;
     void recordEnrollmentOwnership(const QString &faceName);
-    bool installUserPlugin(QString *error);
+    bool stageAndActivateUserPlugin(QString *error);
+    void commitUserPluginActivation();
+    void rollbackUserPluginActivation();
     void continueLockIntegrationInstall();
     void startLockPluginRescan();
     void startLockPluginEnable();
+    void startLockShellRestart();
+    void startLockShellVerification();
     void finishLockActivation(bool success, const QString &error = {});
     void abandonProcess(QProcess *&process);
+    void armProcessDeadline(QProcess *process, const QString &command, int timeoutMs);
+    void recordActivationPhase(const QString &event,
+                               DiagnosticLog::Level level,
+                               const QJsonObject &fields = {});
     void finishFaceSetup(bool success, const QString &error = {});
     void playDing();
     void onParallelPreviewFrame(const QByteArray &jpeg);
@@ -140,7 +161,7 @@ private:
     bool m_serviceAvailable = false;
     bool m_cameraAvailable = false;
     bool m_cameraSupportAvailable = false;
-    bool m_systemAuthenticationScoped = true;
+    bool m_systemIntegrationReady = false;
     bool m_parallelPreviewAvailable = false;
     bool m_faceSetupInstalling = false;
     QString m_faceSetupError;
@@ -158,6 +179,7 @@ private:
     int m_parallelPreviewFrames = 0;
     QString m_errorMessage;
     bool m_lockIntegrationInstalled = false;
+    bool m_lockIntegrationActive = false;
     bool m_lockIntegrationInstalling = false;
     QString m_lockIntegrationError;
     LockActivationPhase m_lockActivationPhase = LockActivationPhase::Idle;
@@ -166,26 +188,21 @@ private:
     QProcess *m_lockPluginEnableProcess = nullptr;
     QString m_lockPluginEnableCommand;
     QString m_lockPluginRescanCommand;
-    int m_lockPluginDiscoveryPasses = 0;
+    QString m_lockShellRestartCommand;
+    bool m_lockRestartAttempted = false;
+    QString m_lockPluginRoot;
+    QString m_lockPluginBackupRoot;
+    QElapsedTimer m_lockActivationElapsed;
+    QElapsedTimer m_lockPhaseElapsed;
+    QElapsedTimer m_lockRestartVerificationElapsed;
     QTimer m_lockActivationDeadline;
     QTemporaryFile *m_dingFile = nullptr;
     _GstElement *m_parallelPreviewPipeline = nullptr;
     std::atomic<qint64> m_lastPreviewFrameUsec{0};
-    QFileSystemWatcher m_themeWatcher;
-    QTimer m_themeReloadTimer;
     QTimer m_faceSetupPollTimer;
+    QProcess *m_faceSetupProcess = nullptr;
     int m_faceSetupPollCount = 0;
     QString m_faceSetupStatusPath;
-    QString m_themeRoot;
+    OmarchyTheme m_theme;
     DiagnosticLog m_diagnostics;
-    QColor m_themeBackground = QColor(QStringLiteral("#111c18"));
-    QColor m_themeDarkBackground = QColor(QStringLiteral("#0c1512"));
-    QColor m_themeDarkerBackground = QColor(QStringLiteral("#090f0d"));
-    QColor m_themeLighterBackground = QColor(QStringLiteral("#23372b"));
-    QColor m_themeForeground = QColor(QStringLiteral("#c1c497"));
-    QColor m_themeMuted = QColor(QStringLiteral("#53685b"));
-    QColor m_themeAccent = QColor(QStringLiteral("#509475"));
-    QColor m_themeOrange = QColor(QStringLiteral("#a2734b"));
-    QColor m_themeGreen = QColor(QStringLiteral("#549e6a"));
-    QColor m_themeRed = QColor(QStringLiteral("#ff5345"));
 };

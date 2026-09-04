@@ -45,6 +45,12 @@ if grep -Fq ': root.gazeReady ? root.accentColor : root.errorColor' "$main_qml";
 fi
 grep -Fq 'id: scanLayout' "$main_qml"
 grep -Fq 'checkingColor: root.accentColor' "$main_qml"
+grep -Fq 'Math.min(width, height) * 0.78' "$main_qml"
+grep -Fq 'width: scanSurface.guideDiameter' "$main_qml"
+if grep -Fq 'Math.min(parent.width * 0.58, 350)' "$main_qml"; then
+    echo 'The enrollment guide must not retain its fixed desktop-size cap.' >&2
+    exit 1
+fi
 grep -Fq '"captured": "Perfect."' "$main_qml"
 grep -Fq 'playDing();' "$project_dir/app/GazeClient.cpp"
 grep -Fq 'assets/ding.mp3' "$project_dir/CMakeLists.txt"
@@ -78,11 +84,16 @@ if [[ -x "$app_binary" ]]; then
     temporary_dir=$(mktemp -d -t face-id-theme-test.XXXXXX)
     app_pid=""
     cleanup() {
+        local status=$?
         if [[ -n "$app_pid" ]]; then
             kill "$app_pid" 2>/dev/null || true
             wait "$app_pid" 2>/dev/null || true
         fi
-        rm -rf -- "$temporary_dir"
+        if [[ $status -ne 0 && ${OMARCHY_FACE_ID_KEEP_TEST_ROOT:-0} == 1 ]]; then
+            printf 'Preserved failed camera root: %s\n' "$temporary_dir" >&2
+        else
+            rm -rf -- "$temporary_dir"
+        fi
     }
     trap cleanup EXIT
 
@@ -90,6 +101,7 @@ if [[ -x "$app_binary" ]]; then
     printf 'background = "#101010"\nforeground = "#eeeeee"\naccent = "#112233"\n' \
         >"$temporary_dir/theme/colors.toml"
     QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+        OMARCHY_FACE_ID_THEME_DEBUG=1 \
         OMARCHY_FACE_ID_THEME_ROOT="$temporary_dir" \
         "$app_binary" >"$temporary_dir/app.log" 2>&1 &
     app_pid=$!

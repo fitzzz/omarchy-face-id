@@ -7,7 +7,7 @@ Status: Qt application, Gaze enrollment, and update-soft lock authentication imp
 
 Build Omarchy Face ID as a local biometric foundation with a Qt 6/QML setup app. Enrollment, matching, liveness, and local storage are the reusable center; the lock screen is the first subscriber. Keep every subscriber independent of Omarchy's first-party files so ordinary updates cannot strand the user behind a broken authentication path.
 
-The current scope stops at enrollment and the lock-screen subscriber. Password prompts, privilege elevation, passkeys, and other biometric consumers are future direction only and must each receive a separate threat model, authorization policy, and recovery design before implementation.
+The initial scope stopped at enrollment and the lock-screen subscriber. Version 0.7 adds terminal `sudo` through an independent, short-lived approval prompt with an explicit password fallback, an isolated PAM include, and a tested uninstall restoration path. The Omarchy plugin remains lock-screen-only and never owns sudo consent. Polkit, passkeys, and other biometric consumers remain future direction and require their own threat model, authorization policy, and recovery design before implementation.
 
 The experience uses a friendly face avatar surrounded by 72 radial scan marks. The face glances, blinks, follows the requested pose, and transitions into a checkmark after a successful scan. The motion is based on the clarity of Apple's Face ID setup language while remaining native to Omarchy's theme. The application does not copy or replace the first-party lock screen.
 
@@ -15,21 +15,23 @@ The experience uses a friendly face avatar surrounded by 72 radial scan marks. T
 
 The AppImage solves distribution of dependency setup, diagnostics, guided enrollment, and explicit subscriber activation. It does not make a sandboxed application into a system authenticator. Each subscriber still requires a trusted Gaze installation, its PAM module, and a narrow connection to that subscriber's authentication lifecycle. On Omarchy, the wizard installs the official `gaze-bin` AUR package through Omarchy and leaves it updateable by the operating system rather than privately distributing it.
 
-This creates two layers:
+This creates three layers:
 
 1. **Face ID foundation:** readiness checks, Gaze-owned enrollment, local matching, liveness, biometric storage, status, and recovery guidance.
 2. **Lock subscriber:** an isolated PAM service and compatibility plugin that asks the existing Omarchy lock service to finish unlocking only after current face PAM success. The wizard installs this subscriber only after enrollment and explicit system authorization.
+3. **Sudo approval:** a PAM-created, per-request standalone prompt that asks for conscious approval before face verification. It uses a private channel bound to that request and does not route authority through the user plugin.
 
 ## Non-negotiable safety contract
 
 - Password unlock remains visible, focused, and independently usable.
 - Face authentication is an optional success path, never a requirement.
 - A face mismatch, camera failure, timeout, daemon crash, missing model, update incompatibility, or app removal leaves password authentication unchanged.
-- The setup app never edits stock Omarchy files or shared PAM stacks itself.
+- The setup app never edits stock Omarchy files. Its privileged installer adds one stable, transactionally managed sudo include. `/etc/pam.d/omarchy-face-id` contains only the consent coordinator, while `/usr/lib/omarchy-face-id/pam.d/sudo` is a private face-only verifier stack. Validation and rollback preserve the original password stack.
 - **Install Gaze Package** explicitly invokes the official AUR package and its standard Arch scriptlet. That upstream scriptlet may add optional Gaze authentication to sudo and initialize polkit while retaining password fallback. If this wizard installed the package, uninstall delegates to Gaze's official cleanup to reverse those additions.
 - Lock-screen integration will use a dedicated face-only PAM service. It will not include `system-auth`, `pam_unix`, `pam_faillock`, sudo, or polkit.
+- Sudo approval and face verification share one visible request window. The privileged coordinator keeps authority, the visual process runs as the desktop user, and the private verifier has no controlling terminal. Only explicit approval followed by current Gaze PAM success can authorize sudo.
 - The project does not clone, replace, or edit Omarchy's lock screen. The compatibility plugin checks for the required lock-service method at runtime and stays inactive if an update removes it.
-- Testing of real authentication begins in a disposable account or virtual machine with an out-of-band recovery route, not on the user's only login path.
+- Automated installer, PAM, package, service, and uninstall tests run only against guarded fake roots and stubbed commands. They abort if a live system path or privileged command is detected.
 
 ## Implemented application flow
 

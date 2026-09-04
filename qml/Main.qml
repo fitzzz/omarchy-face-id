@@ -34,6 +34,14 @@ ApplicationWindow {
     property int currentStep: Qt.application.arguments.indexOf("--done-page-test") >= 0 ? 3
         : Qt.application.arguments.indexOf("--camera-page-test") >= 0 ? 2 : 0
     property bool enrollmentStarted: false
+    property bool upgradeInProgress: false
+    property bool upgradeComplete: false
+    readonly property bool upgradeSession: gazeClient.upgradeAvailable
+        || upgradeInProgress || upgradeComplete
+    readonly property bool upgradeFailed: upgradeInProgress
+        && (gazeClient.faceSetupError.length > 0
+            || gazeClient.lockIntegrationError.length > 0)
+    readonly property bool upgradeWorking: upgradeInProgress && !upgradeFailed
     property string displayedPrompt: "Preparing camera…"
     property string pendingPrompt: ""
     property real scanPromptOpacity: 1
@@ -46,10 +54,11 @@ ApplicationWindow {
         && !gazeClient.enrolling
         && !gazeClient.enrollmentComplete
         && ["camera-failed", "db-failed", "cancelled"].indexOf(gazeClient.enrollmentPrompt) >= 0
-    readonly property bool gazeReady: gazeClient.installed
+    readonly property bool systemReady: gazeClient.installed
         && gazeClient.serviceAvailable
         && gazeClient.cameraSupportAvailable
-        && gazeClient.systemAuthenticationScoped
+        && gazeClient.systemIntegrationReady
+    readonly property bool gazeReady: systemReady
         && gazeClient.cameraAvailable
 
     function friendlyPrompt(prompt) {
@@ -82,7 +91,7 @@ ApplicationWindow {
             return !gazeClient.installed ? "Installing Gaze Package…"
                 : !gazeClient.cameraSupportAvailable
                     ? "Installing Camera Support…"
-                    : !gazeClient.systemAuthenticationScoped
+                    : !gazeClient.systemIntegrationReady
                         ? "Finishing Face ID Setup…" : "Starting Gaze Service…"
         if (gazeReady)
             return "Camera Ready"
@@ -90,7 +99,7 @@ ApplicationWindow {
             return "Install Gaze from AUR"
         if (!gazeClient.cameraSupportAvailable)
             return "Complete Camera Setup"
-        if (!gazeClient.systemAuthenticationScoped)
+        if (!gazeClient.systemIntegrationReady)
             return "Finish Face ID Setup"
         if (!gazeClient.serviceAvailable)
             return "Face Scanning Is Offline"
@@ -108,8 +117,8 @@ ApplicationWindow {
             return "Gaze powers facial authentication with local liveness anti-spoofing and support for infrared (IR) cameras for secure authentication."
         if (!gazeClient.cameraSupportAvailable)
             return "Face ID needs one camera format component. Setup installs it through Omarchy."
-        if (!gazeClient.systemAuthenticationScoped)
-            return "Keep Face ID limited to your lock screen, as intended."
+        if (!gazeClient.systemIntegrationReady)
+            return "Add Face ID to terminal approvals and install the latest Omarchy experience."
         if (!gazeClient.serviceAvailable)
             return "Start the face-scanning service, then check again."
         return "Close other camera apps, then check again."
@@ -169,6 +178,18 @@ ApplicationWindow {
                 root.displayedPrompt = "Scan complete."
                 root.scanPromptOpacity = 1
                 scanCompleteTimer.restart()
+            }
+        }
+        function onFaceSetupChanged() {
+            if (!root.upgradeInProgress || gazeClient.faceSetupInstalling
+                || gazeClient.faceSetupError.length > 0) return
+            if (root.systemReady) gazeClient.enableLockIntegration()
+        }
+        function onLockIntegrationActivationFinished(filesInstalled, liveActive) {
+            if (!root.upgradeInProgress) return
+            if (filesInstalled && liveActive) {
+                root.upgradeInProgress = false
+                root.upgradeComplete = true
             }
         }
     }
@@ -252,7 +273,8 @@ ApplicationWindow {
                     spacing: 12
                     EyeIndicator {
                         iconSize: 40
-                        state: root.currentStep === 3 ? "success" : "searching"
+                        state: root.upgradeComplete || root.currentStep === 3
+                            ? "success" : root.upgradeWorking ? "checking" : "searching"
                         backgroundColor: root.sidebarColor
                         neutralColor: root.accentColor
                         successColor: root.successColor
@@ -277,11 +299,18 @@ ApplicationWindow {
                 StepRail {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: !root.upgradeSession
                     currentStep: root.currentStep
                     steps: root.stepNames
                     accentColor: root.accentColor
                     textColor: root.textColor
                     mutedColor: root.mutedColor
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: root.upgradeSession
                 }
 
                 Item {
@@ -307,12 +336,159 @@ ApplicationWindow {
             Layout.fillHeight: true
             color: root.backgroundColor
 
+            Item {
+                id: upgradeExperience
+                anchors.fill: parent
+                anchors.margins: 56
+                visible: root.upgradeSession
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.min(520, parent.width)
+                    spacing: 26
+
+                    Item {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 240
+                        Layout.preferredHeight: root.upgradeWorking ? 40 : 140
+                        visible: root.upgradeInProgress || root.upgradeComplete
+
+                        Item {
+                            anchors.centerIn: parent
+                            width: 240
+                            height: 4
+                            visible: root.upgradeWorking
+                            clip: true
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 2
+                                color: root.mutedColor
+                                opacity: 0.22
+                            }
+
+                            Rectangle {
+                                width: 72
+                                height: parent.height
+                                radius: 2
+                                color: root.accentColor
+
+                                SequentialAnimation on x {
+                                    running: root.upgradeWorking
+                                    loops: Animation.Infinite
+                                    NumberAnimation {
+                                        from: -72
+                                        to: 240
+                                        duration: 1050
+                                        easing.type: Easing.InOutCubic
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 120
+                            height: 120
+                            radius: 60
+                            visible: root.upgradeComplete || root.upgradeFailed
+                            color: "transparent"
+                            border.width: 2
+                            border.color: root.upgradeComplete
+                                ? root.successColor : root.mutedColor
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.upgradeComplete ? "✓" : "!"
+                                color: root.upgradeComplete
+                                    ? root.successColor : root.mutedColor
+                                font.family: "monospace"
+                                font.pixelSize: 54
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.upgradeComplete ? "Face ID is up to date."
+                            : root.upgradeFailed ? "Update couldn’t finish."
+                            : root.upgradeWorking
+                                ? gazeClient.faceSetupInstalling
+                                    ? "Installing Face ID components…"
+                                    : gazeClient.lockIntegrationInstalling
+                                        ? gazeClient.lockIntegrationStatus
+                                        : "Preparing update…"
+                            : "A new version v" + Qt.application.version
+                                + " is available.\nAre you ready to install?"
+                        color: root.textColor
+                        font.family: "monospace"
+                        font.pixelSize: 22
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
+                        lineHeight: 1.2
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                }
+
+                ThemedActionButton {
+                    anchors.left: parent.left
+                    anchors.bottom: parent.bottom
+                    visible: !root.upgradeComplete
+                        && (!root.upgradeInProgress || root.upgradeFailed)
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: root.close()
+                }
+
+                ThemedActionButton {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    visible: !root.upgradeInProgress && !root.upgradeComplete
+                    text: "Continue"
+                    primary: true
+                    forwardIcon: true
+                    onClicked: {
+                        gazeClient.refresh()
+                        root.upgradeComplete = false
+                        root.upgradeInProgress = true
+                        gazeClient.installFaceSetup()
+                    }
+                }
+
+                ThemedActionButton {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    visible: root.upgradeFailed
+                    text: "Try Again"
+                    primary: true
+                    onClicked: {
+                        gazeClient.refresh()
+                        if (root.systemReady)
+                            gazeClient.enableLockIntegration()
+                        else
+                            gazeClient.installFaceSetup()
+                    }
+                }
+
+                ThemedActionButton {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    visible: root.upgradeComplete
+                    text: "Done"
+                    primary: true
+                    onClicked: root.close()
+                }
+            }
+
             StackLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 56
                 anchors.rightMargin: 56
                 anchors.topMargin: 42
                 anchors.bottomMargin: 38
+                visible: !root.upgradeSession
                 currentIndex: root.currentStep
 
                 Item {
@@ -434,7 +610,10 @@ ApplicationWindow {
                             ThemedActionButton {
                                 text: "Back"
                                 quiet: true
-                                onClicked: root.currentStep = 0
+                                onClicked: {
+                                    root.upgradeInProgress = false
+                                    root.currentStep = 0
+                                }
                             }
                             Item { Layout.fillWidth: true }
                             ThemedActionButton {
@@ -451,11 +630,11 @@ ApplicationWindow {
                                     : !gazeClient.installed ? "Install Gaze Package"
                                         : !gazeClient.cameraSupportAvailable
                                             ? "Install Camera Support"
-                                            : !gazeClient.systemAuthenticationScoped
+                                            : !gazeClient.systemIntegrationReady
                                                 ? "Finish Setup" : "Start Gaze Service"
                                 visible: !gazeClient.installed
                                     || !gazeClient.cameraSupportAvailable
-                                    || !gazeClient.systemAuthenticationScoped
+                                    || !gazeClient.systemIntegrationReady
                                     || !gazeClient.serviceAvailable
                                 primary: true
                                 enabled: !gazeClient.faceSetupInstalling
@@ -502,6 +681,8 @@ ApplicationWindow {
 
                             readonly property bool showingPreview:
                                 gazeClient.previewDataUrl.length > 0
+                            readonly property real guideDiameter: Math.max(
+                                240, Math.min(width, height) * 0.78)
 
                             Image {
                                 anchors.fill: parent
@@ -522,7 +703,7 @@ ApplicationWindow {
 
                             FaceScanIndicator {
                                 anchors.centerIn: parent
-                                width: Math.min(parent.width * 0.58, 350)
+                                width: scanSurface.guideDiameter
                                 height: width
                                 state: gazeClient.enrollmentComplete ? "success"
                                     : root.scanFailed ? "unavailable" : "checking"
@@ -573,7 +754,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: gazeClient.lockIntegrationInstalled
+                            text: gazeClient.lockIntegrationActive
                                 ? "Face ID is ready." : "Face scan complete."
                             color: root.textColor
                             font.family: "monospace"
@@ -584,7 +765,7 @@ ApplicationWindow {
                         Text {
                             Layout.maximumWidth: 520
                             Layout.alignment: Qt.AlignHCenter
-                            text: gazeClient.lockIntegrationInstalled
+                            text: gazeClient.lockIntegrationActive
                                 ? "Try locking your computer.\nFace ID will appear after 3 seconds."
                                 : "Approve the system prompt to add Face ID to the lock screen."
                             color: root.textColor
@@ -612,7 +793,7 @@ ApplicationWindow {
                             spacing: 12
                             Item { Layout.fillWidth: true }
                             ThemedActionButton {
-                                visible: !gazeClient.lockIntegrationInstalled
+                                visible: !gazeClient.lockIntegrationActive
                                 text: "Scan Again"
                                 onClicked: {
                                     root.enrollmentStarted = false
@@ -622,12 +803,12 @@ ApplicationWindow {
                             ThemedActionButton {
                                 text: gazeClient.lockIntegrationInstalling
                                     ? "Enabling Face ID…"
-                                    : gazeClient.lockIntegrationInstalled
+                                    : gazeClient.lockIntegrationActive
                                         ? "Done" : "Enable Face ID"
                                 primary: true
                                 enabled: !gazeClient.lockIntegrationInstalling
                                 onClicked: {
-                                    if (gazeClient.lockIntegrationInstalled)
+                                    if (gazeClient.lockIntegrationActive)
                                         root.close()
                                     else
                                         gazeClient.enableLockIntegration()
