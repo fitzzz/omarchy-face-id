@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.7.73 - Test candidate
+
+- Retry Face ID plugin enablement while Omarchy discovers new plugins asynchronously, including after a fallback shell restart. Keep discovery retries bounded and preserve rollback when the plugin never becomes available.
+
 ## 0.7.72 - 2026-09-04
 
 - Make an explicit sudo decline interrupt the active PAM conversation before sudo counts a password attempt, so Terminal returns without retry or incorrect-password output.

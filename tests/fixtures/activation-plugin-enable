@@ -46,6 +46,11 @@ else
     [[ -f $attempt_file ]] && attempt=$(<"$attempt_file")
     printf '%s\n' "$((attempt + 1))" > "$attempt_file"
     [[ -f $config_dir/rescan-complete ]] || exit 1
+    case ${OMARCHY_FACE_ID_TEST_MODE:-success} in
+        discovery-async|discovery-after-restart)
+            : > "$config_dir/face-id-handler-ready"
+            ;;
+    esac
     printf '%s\n' '{"version":1,"plugins":[{"id":"fitzzz.face-id"}]}' \
         > "$config_dir/shell.json"
 fi

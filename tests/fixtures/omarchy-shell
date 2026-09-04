@@ -17,6 +17,13 @@ if [[ ${0##*/} == "omarchy-restart-shell" ]]; then
     increment "$config_dir/restart-attempts"
     : > "$config_dir/core-shell-ready"
     case $mode in
+        discovery-after-restart)
+            : > "$config_dir/rescan-complete"
+            exit 0
+            ;;
+        discovery-never-ready)
+            exit 0
+            ;;
         restart-not-ready)
             exit 1
             ;;
@@ -71,6 +78,15 @@ if [[ $mode == rescan-slow-ready ]]; then
     sleep 0.25
 fi
 
+if [[ $mode == discovery-async ]]; then
+    # Return the IPC acknowledgement before discovery finishes, just like
+    # Omarchy's asynchronous registry. Do not keep the IPC pipes open.
+    (sleep 0.2; : > "$config_dir/rescan-complete") </dev/null >/dev/null 2>&1 &
+    exit 0
+fi
+if [[ $mode == discovery-after-restart || $mode == discovery-never-ready ]]; then
+    exit 0
+fi
 : > "$config_dir/rescan-complete"
 : > "$config_dir/core-shell-ready"
 case $mode in
